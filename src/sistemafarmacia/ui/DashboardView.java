@@ -2,7 +2,6 @@ package sistemafarmacia.ui;
 
 import javafx.geometry.Insets;
 import javafx.scene.layout.*;
-import javafx.scene.paint.Color;
 import sistemafarmacia.utils.UIComponents;
 
 public class DashboardView {
@@ -18,10 +17,10 @@ public class DashboardView {
     }
 
     private VBox createCenter() {
-        VBox container = new VBox(20);
-        container.setPadding(new Insets(20));
+        VBox container = new VBox(30);
+        container.setPadding(new Insets(25));
 
-        // Tarjetas pequeñas
+        // Estadísticas
         HBox stats = new HBox(20);
         stats.getChildren().addAll(
                 UIComponents.statCard("Medicamentos", "128"),
@@ -30,15 +29,18 @@ public class DashboardView {
                 UIComponents.statCard("Proveedores", "12")
         );
 
-        // Tarjetas grandes
+        // Módulos principales
         GridPane grid = new GridPane();
-        grid.setHgap(20);
-        grid.setVgap(20);
+        grid.setHgap(25);
+        grid.setVgap(25);
 
-        grid.add(UIComponents.bigCard("Gestión de Medicamentos", "#2563eb"), 0, 0);
-        grid.add(UIComponents.bigCard("Ventas", "#16a34a"), 1, 0);
-        grid.add(UIComponents.bigCard("Inventario", "#d97706"), 0, 1);
-        grid.add(UIComponents.bigCard("Reportes", "#7c3aed"), 1, 1);
+        grid.add(UIComponents.bigCard("Catálogo de Medicamentos", "#2563eb"), 0, 0);
+        grid.add(UIComponents.bigCard("Nuevo Producto", "#16a34a"), 1, 0);
+        grid.add(UIComponents.bigCard("Sesiones y Ventas", "#0ea5e9"), 2, 0);
+
+        grid.add(UIComponents.bigCard("Generar Ticket", "#d97706"), 0, 1);
+        grid.add(UIComponents.bigCard("Corte Semanal", "#7c3aed"), 1, 1);
+        grid.add(UIComponents.bigCard("Filtros", "#dc2626"), 2, 1);
 
         container.getChildren().addAll(stats, grid);
         return container;
