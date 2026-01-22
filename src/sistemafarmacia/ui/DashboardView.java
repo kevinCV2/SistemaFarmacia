@@ -52,7 +52,7 @@ public class DashboardView {
 
         stats.getChildren().addAll(card1, card2, card3);
 
-        // 🔹 TARJETAS GRANDES (SIN MODIFICAR)
+        // TARJETAS GRANDES (SIN MODIFICAR)
         GridPane grid = new GridPane();
         grid.setHgap(20);
         grid.setVgap(20);
