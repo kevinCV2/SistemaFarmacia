@@ -2,6 +2,12 @@ package sistemafarmacia.ui;
 
 import javafx.geometry.Insets;
 import javafx.scene.layout.*;
+import sistemafarmacia.ui.catalogo.CatalogoView;
+import sistemafarmacia.ui.cortes.CortesSemanalesView;
+import sistemafarmacia.ui.filtros.FiltrosView;
+import sistemafarmacia.ui.nuevoproducto.NuevoProductoView;
+import sistemafarmacia.ui.sesiones.SesionesView;
+import sistemafarmacia.ui.ticket.GenerarTicketView;
 import sistemafarmacia.utils.UIComponents;
 
 public class DashboardView {
@@ -24,7 +30,7 @@ public class DashboardView {
         VBox container = new VBox(25);
         container.setPadding(new Insets(20));
 
-        // 🔹 TARJETAS SUPERIORES (OCUPAN TODO EL ANCHO)
+        // TARJETAS SUPERIORES (OCUPAN TODO EL ANCHO)
         HBox stats = new HBox(20);
         stats.setPrefWidth(Double.MAX_VALUE);
 
@@ -52,16 +58,24 @@ public class DashboardView {
 
         stats.getChildren().addAll(card1, card2, card3);
 
-        // TARJETAS GRANDES (SIN MODIFICAR)
+        // TARJETAS GRANDES (OCUPAN TODO EL ANCHO)
         GridPane grid = new GridPane();
         grid.setHgap(20);
         grid.setVgap(20);
+        grid.setMaxWidth(Double.MAX_VALUE);
+
+        // COLUMNAS AL 100% DEL ANCHO (3 POR FILA)
+        ColumnConstraints col = new ColumnConstraints();
+        col.setPercentWidth(33.33);
+        col.setHgrow(Priority.ALWAYS);
+        grid.getColumnConstraints().addAll(col, col, col);
 
         grid.add(
                 UIComponents.bigCard(
                         "Catálogo de Medicamentos",
                         "#2563eb",
-                        "/sistemafarmacia/assets/icons/Catálogo.png"
+                        "/sistemafarmacia/assets/icons/Catálogo.png",
+                        () -> root.setCenter(new CatalogoView().getRoot())
                 ), 0, 0
         );
 
@@ -69,7 +83,8 @@ public class DashboardView {
                 UIComponents.bigCard(
                         "Nuevo Producto",
                         "#16a34a",
-                        "/sistemafarmacia/assets/icons/Nuevo producto.png"
+                        "/sistemafarmacia/assets/icons/Nuevo producto.png",
+                        () -> root.setCenter(new NuevoProductoView().getRoot())
                 ), 1, 0
         );
 
@@ -77,7 +92,8 @@ public class DashboardView {
                 UIComponents.bigCard(
                         "Sesiones y Ventas",
                         "#d97706",
-                        "/sistemafarmacia/assets/icons/Sesiones y ventas.png"
+                        "/sistemafarmacia/assets/icons/Sesiones y ventas.png",
+                       () -> root.setCenter(new SesionesView().getRoot())
                 ), 2, 0
         );
 
@@ -85,7 +101,8 @@ public class DashboardView {
                 UIComponents.bigCard(
                         "Generar Ticket",
                         "#14b8a6",
-                        "/sistemafarmacia/assets/icons/Generar ticket.png"
+                        "/sistemafarmacia/assets/icons/Generar ticket.png",
+                        () -> root.setCenter(new GenerarTicketView().getRoot())
                 ), 0, 1
         );
 
@@ -93,7 +110,8 @@ public class DashboardView {
                 UIComponents.bigCard(
                         "Cortes semanales",
                         "#7c3aed",
-                        "/sistemafarmacia/assets/icons/Cortes semanales.png"
+                        "/sistemafarmacia/assets/icons/Cortes semanales.png",
+                        () -> root.setCenter(new CortesSemanalesView().getRoot())
                 ), 1, 1
         );
 
@@ -101,9 +119,12 @@ public class DashboardView {
                 UIComponents.bigCard(
                         "Filtros",
                         "#9ca3af",
-                        "/sistemafarmacia/assets/icons/Filtros.png"
+                        "/sistemafarmacia/assets/icons/Filtros.png",
+                        () -> root.setCenter(new FiltrosView().getRoot())
                 ), 2, 1
         );
+
+        VBox.setVgrow(grid, Priority.ALWAYS);
 
         container.getChildren().addAll(stats, grid);
         return container;

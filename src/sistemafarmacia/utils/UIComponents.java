@@ -6,6 +6,7 @@ import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Cursor;
 import javafx.scene.control.Label;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
@@ -108,29 +109,53 @@ public class UIComponents {
     }
 
     // ================= TARJETA GRANDE =================
-    public static StackPane bigCard(String text, String color, String iconPath) {
+    public static Region bigCard(
+            String title,
+            String color,
+            String iconPath,
+            Runnable action
+    ) {
+        VBox card = new VBox(15);
+        card.setPadding(new Insets(20));
+        card.setAlignment(Pos.CENTER);
+        card.setCursor(Cursor.HAND);
 
-        StackPane pane = new StackPane();
-        pane.setPrefSize(360, 190);
-        pane.setStyle("""
-                -fx-background-color: %s;
-                -fx-background-radius: 18;
-                """.formatted(color));
+        card.setStyle("""
+            -fx-background-color: %s;
+            -fx-background-radius: 16;
+        """.formatted(color));
 
-        VBox content = new VBox(10);
-        content.setPadding(new Insets(20));
-        content.setAlignment(Pos.TOP_LEFT);
+        ImageView icon = new ImageView(
+                new Image(UIComponents.class.getResourceAsStream(iconPath))
+        );
+        icon.setFitWidth(64);
+        icon.setFitHeight(64);
 
-        ImageView icon = loadIcon(iconPath, 48);
+        Label label = new Label(title);
+        label.setFont(Font.font(16));
+        label.setStyle("-fx-text-fill: white;");
 
-        Label label = new Label(text);
-        label.setTextFill(Color.WHITE);
-        label.setFont(Font.font(20));
+        card.getChildren().addAll(icon, label);
 
-        content.getChildren().addAll(icon, label);
-        pane.getChildren().add(content);
+        // EVENTO CLICK
+        card.setOnMouseClicked(e -> action.run());
 
-        return pane;
+        // Hover bonito
+        card.setOnMouseEntered(e ->
+                card.setStyle("""
+                    -fx-background-color: derive(%s, -10%%);
+                    -fx-background-radius: 16;
+                """.formatted(color))
+        );
+
+        card.setOnMouseExited(e ->
+                card.setStyle("""
+                    -fx-background-color: %s;
+                    -fx-background-radius: 16;
+                """.formatted(color))
+        );
+
+        return card;
     }
 
     // ================= CARGA SEGURA DE ICONOS =================
@@ -151,4 +176,5 @@ public class UIComponents {
         icon.setPreserveRatio(true);
         return icon;
     }
+
 }
