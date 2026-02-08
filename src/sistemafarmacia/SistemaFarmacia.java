@@ -7,39 +7,52 @@ import javafx.stage.Stage;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import sistemafarmacia.ui.DashboardView;
+import sistemafarmacia.utils.ConexionDB;
 
 public class SistemaFarmacia extends Application {
 
     @Override
     public void start(Stage stage) {
 
+        System.out.println("Iniciando sistema | Iniciando conexion de BD al sistema");
+        ConexionDB.getInstance();
+
         // ================= ICONO DE LA APP =================
-        Image icon = new Image(
-                SistemaFarmacia.class.getResourceAsStream(
-                        "/sistemafarmacia/assets/app_icon.jpg"
-                )
-        );
-        stage.getIcons().add(icon);
+        try {
+            Image icon = new Image(
+                    getClass().getResourceAsStream("/sistemafarmacia/assets/app_icon.jpg")
+            );
+            stage.getIcons().add(icon);
+        } catch (Exception e) {
+            System.out.println("⚠️ No se encontró el icono de la app, usando el default.");
+        }
 
         // ================= DASHBOARD =================
         DashboardView dashboard = new DashboardView();
         Scene scene = new Scene(dashboard.getRoot(), 1200, 720);
 
-        stage.setTitle("Sistema de Gestión - Farmacia");
+        stage.setTitle("Sistema Integral de Gestión Médica y Administrativa");
         stage.setScene(scene);
 
         // ================= PANTALLA COMPLETA =================
-        stage.setFullScreenExitHint(""); // Quita el mensaje de ESC
-        stage.setFullScreen(true);       // Oculta barra de tareas
+        stage.setFullScreenExitHint("");
+        stage.setFullScreen(false);
 
         // ================= BLOQUEAR TECLA ESC =================
         stage.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() == KeyCode.ESCAPE) {
-                e.consume(); // Bloquea ESC
+                e.consume();
             }
         });
 
         stage.show();
+    }
+
+    @Override
+    public void stop() throws Exception {
+        System.out.println("Cerrando la aplicación | Cerrando conexion a la Base de Datos");
+        ConexionDB.cerrarConexion();
+        super.stop();
     }
 
     public static void main(String[] args) {

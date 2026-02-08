@@ -28,7 +28,7 @@ public class UIComponents {
         // ---- IZQUIERDA ----
         VBox left = new VBox(5);
 
-        Label title = new Label("Sistema de Gestión - Farmacia");
+        Label title = new Label("Sistema Integral de Gestión Médica y Administrativa");
         title.setFont(Font.font(26));
         title.setTextFill(Color.WHITE);
 
