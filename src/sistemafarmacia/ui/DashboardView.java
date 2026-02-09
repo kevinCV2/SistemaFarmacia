@@ -111,7 +111,11 @@ public class DashboardView {
                         "Cortes semanales",
                         "#7c3aed",
                         "/sistemafarmacia/assets/icons/Cortes semanales.png",
-                        () -> root.setCenter(new CortesSemanalesView().getRoot())
+                        () -> {
+                            root.setCenter(new CortesSemanalesView(
+                                    () -> root.setCenter(createCenter())
+                            ).getRoot());
+                        }
                 ), 1, 1
         );
 
