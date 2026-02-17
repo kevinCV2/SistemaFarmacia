@@ -8,7 +8,7 @@ public class ConexionDB {
 
     private static final String DB_NAME = "farmacia_db";
     private static final String USER = "postgres";
-    private static final String PASS = "11111";
+    private static final String PASS = "";
 
     private static final String URL = "jdbc:postgresql://localhost:5432/" + DB_NAME;
 
