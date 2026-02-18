@@ -70,19 +70,23 @@ public class DashboardView {
         col.setHgrow(Priority.ALWAYS);
         grid.getColumnConstraints().addAll(col, col, col);
 
-        grid.add(
-                UIComponents.bigCard(
-                        "Catálogo de Medicamentos",
-                        "#2563eb",
-                        "/sistemafarmacia/assets/icons/Catálogo.png",
-                        () -> root.setCenter(new CatalogoView().getRoot())
-                ), 0, 0
-        );
+            grid.add(
+                    UIComponents.bigCard(
+                            "Catálogo de Medicamentos",
+                            "#374151",
+                            "/sistemafarmacia/assets/icons/Catálogo.png",
+                            () -> root.setCenter(
+                                    new CatalogoView(
+                                            () -> root.setCenter(createCenter())
+                                    ).getRoot()
+                            )
+                    ), 0, 0
+            );
 
         grid.add(
                 UIComponents.bigCard(
                         "Nuevo Producto",
-                        "#16a34a",
+                        "#374151",
                         "/sistemafarmacia/assets/icons/Nuevo producto.png",
                         () -> root.setCenter(new NuevoProductoView().getRoot())
                 ), 1, 0
@@ -91,7 +95,7 @@ public class DashboardView {
         grid.add(
                 UIComponents.bigCard(
                         "Sesiones y Ventas",
-                        "#d97706",
+                        "#374151",
                         "/sistemafarmacia/assets/icons/Sesiones y ventas.png",
                        () -> root.setCenter(new SesionesView().getRoot())
                 ), 2, 0
@@ -100,7 +104,7 @@ public class DashboardView {
         grid.add(
                 UIComponents.bigCard(
                         "Generar Ticket",
-                        "#14b8a6",
+                        "#374151",
                         "/sistemafarmacia/assets/icons/Generar ticket.png",
                         () -> root.setCenter(new GenerarTicketView().getRoot())
                 ), 0, 1
@@ -109,16 +113,20 @@ public class DashboardView {
         grid.add(
                 UIComponents.bigCard(
                         "Cortes semanales",
-                        "#7c3aed",
+                        "#374151",
                         "/sistemafarmacia/assets/icons/Cortes semanales.png",
-                        () -> root.setCenter(new CortesSemanalesView().getRoot())
+                        () -> {
+                            root.setCenter(new CortesSemanalesView(
+                                    () -> root.setCenter(createCenter())
+                            ).getRoot());
+                        }
                 ), 1, 1
         );
 
         grid.add(
                 UIComponents.bigCard(
                         "Filtros",
-                        "#9ca3af",
+                        "#374151",
                         "/sistemafarmacia/assets/icons/Filtros.png",
                         () -> root.setCenter(new FiltrosView().getRoot())
                 ), 2, 1
