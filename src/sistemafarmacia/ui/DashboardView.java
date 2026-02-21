@@ -30,7 +30,6 @@ public class DashboardView {
         VBox container = new VBox(25);
         container.setPadding(new Insets(20));
 
-        // TARJETAS SUPERIORES (OCUPAN TODO EL ANCHO)
         HBox stats = new HBox(20);
         stats.setPrefWidth(Double.MAX_VALUE);
 
@@ -102,7 +101,9 @@ public class DashboardView {
                         "Generar Ticket",
                         "#14b8a6",
                         "/sistemafarmacia/assets/icons/Generar ticket.png",
-                        () -> root.setCenter(new GenerarTicketView().getRoot())
+                        () -> root.setCenter(new GenerarTicketView(
+                                () ->root.setCenter(createCenter())
+                        ).getRoot())
                 ), 0, 1
         );
 
