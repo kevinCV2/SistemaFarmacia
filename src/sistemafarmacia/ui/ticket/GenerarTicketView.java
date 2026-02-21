@@ -5,12 +5,15 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.effect.DropShadow;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 
+import java.io.InputStream;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 
@@ -26,10 +29,9 @@ public class GenerarTicketView {
     private Label lblTicketNumero;
     private Label lblTicketPacienteValor;
 
-    // --- VARIABLES GLOBALES NUEVAS PARA EL TICKET ---
-    private VBox contenedorProductosFormulario; // El VBox de la izquierda (Formulario)
-    private VBox contenedorTicketProductos;     // El VBox de la derecha (Ticket)
-    private Label lblTicketTotalNum;            // Para cambiar el gran total
+    private VBox contenedorProductosFormulario;
+    private VBox contenedorTicketProductos;
+    private Label lblTicketTotalNum;
 
     public GenerarTicketView(Runnable actionVolver) {
         this.actionVolver = actionVolver;
@@ -75,7 +77,6 @@ public class GenerarTicketView {
         VBox contenidoScroll = new VBox(20);
         contenidoScroll.setPadding(new Insets(0, 10, 0, 0));
 
-        // --- TARJETA 1: DATOS ---
         VBox cardDatos = new VBox(15);
         cardDatos.setStyle("-fx-background-color: #111827; -fx-padding: 20; -fx-background-radius: 10;");
 
@@ -101,7 +102,6 @@ public class GenerarTicketView {
 
         cardDatos.getChildren().addAll(lblDatos, lblDireccion, txtDireccion, lblNum, txtNumero, lblNom, txtPaciente);
 
-        // --- TARJETA 2: PRODUCTOS ---
         VBox cardProductos = new VBox(15);
         cardProductos.setStyle("-fx-background-color: #111827; -fx-padding: 20; -fx-background-radius: 10;");
 
@@ -113,7 +113,6 @@ public class GenerarTicketView {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        // INICIALIZAMOS EL VBOX GLOBAL DEL FORMULARIO
         contenedorProductosFormulario = new VBox(10);
 
         Button btnAgregar = new Button("+ Agregar");
@@ -123,7 +122,7 @@ public class GenerarTicketView {
         headerProd.getChildren().addAll(lblProd, spacer, btnAgregar);
         cardProductos.getChildren().addAll(headerProd, contenedorProductosFormulario);
 
-        agregarFilaProducto(); // Fila inicial
+        agregarFilaProducto();
 
         contenidoScroll.getChildren().addAll(cardDatos, cardProductos);
 
@@ -143,9 +142,6 @@ public class GenerarTicketView {
         return panelPrincipal;
     }
 
-    // ==========================================
-    // MÉTODOS PARA MANEJAR PRODUCTOS
-    // ==========================================
     private void agregarFilaProducto() {
         HBox fila = new HBox(10);
 
@@ -163,7 +159,6 @@ public class GenerarTicketView {
 
         TextField txtPrecio = crearTextField("Precio");
         txtPrecio.setPrefWidth(80);
-        // Validación extra: Que el precio solo acepte números y un punto decimal
         txtPrecio.setTextFormatter(new TextFormatter<>(change -> change.getControlNewText().matches("\\d*\\.?\\d*") ? change : null));
 
         Button btnEliminar = new Button("×");
@@ -172,18 +167,15 @@ public class GenerarTicketView {
         btnEliminar.setOnAction(e -> {
             if(contenedorProductosFormulario.getChildren().size() > 1) {
                 contenedorProductosFormulario.getChildren().remove(fila);
-                actualizarTablaTicket(); // MAGIA: Si borras, se actualiza el ticket
+                actualizarTablaTicket();
             }
         });
 
-        // Escáner de código de barras
         txtId.setOnAction(e -> verificarIdEscaneado(txtId, fila));
         txtId.focusedProperty().addListener((obs, oldVal, newVal) -> {
             if (!newVal) verificarIdEscaneado(txtId, fila);
         });
 
-        // --- MAGIA NUEVA: ACTUALIZACIÓN EN TIEMPO REAL ---
-        // Le decimos a los campos "Si cambias de texto, avísale al ticket para que se vuelva a dibujar"
         txtNomProd.textProperty().addListener((obs, old, newV) -> actualizarTablaTicket());
         txtCant.textProperty().addListener((obs, old, newV) -> actualizarTablaTicket());
         txtPrecio.textProperty().addListener((obs, old, newV) -> actualizarTablaTicket());
@@ -191,7 +183,7 @@ public class GenerarTicketView {
         fila.getChildren().addAll(txtId, txtNomProd, txtCant, txtPrecio, btnEliminar);
         contenedorProductosFormulario.getChildren().add(fila);
 
-        actualizarTablaTicket(); // Actualizamos al agregar la fila
+        actualizarTablaTicket();
     }
 
     private void verificarIdEscaneado(TextField txtIdActual, HBox filaActual) {
@@ -207,7 +199,6 @@ public class GenerarTicketView {
                     try {
                         int cantActual = Integer.parseInt(txtOtraCant.getText());
                         txtOtraCant.setText(String.valueOf(cantActual + 1));
-                        // Al hacer .setText(), el listener dispara actualizarTablaTicket() automáticamente. ¡Magia pura!
                     } catch (NumberFormatException ex) {
                         txtOtraCant.setText("2");
                     }
@@ -219,22 +210,15 @@ public class GenerarTicketView {
         }
     }
 
-    // ==========================================
-    // MAGIA NUEVA: SINCRONIZAR TICKET CON FORMULARIO
-    // ==========================================
     private void actualizarTablaTicket() {
-        // Prevención de errores si se llama antes de que el ticket se construya
         if (contenedorTicketProductos == null || lblTicketTotalNum == null) return;
 
-        // 1. Limpiamos la tabla del ticket actual
         contenedorTicketProductos.getChildren().clear();
         double granTotal = 0.0;
 
-        // 2. Recorremos todas las filas del formulario (izquierda)
         for (Node nodo : contenedorProductosFormulario.getChildren()) {
             HBox fila = (HBox) nodo;
 
-            // Extraemos los campos (0: ID, 1: Nombre, 2: Cant, 3: Precio)
             TextField txtNom = (TextField) fila.getChildren().get(1);
             TextField txtCant = (TextField) fila.getChildren().get(2);
             TextField txtPrecio = (TextField) fila.getChildren().get(3);
@@ -243,21 +227,17 @@ public class GenerarTicketView {
             String cantStr = txtCant.getText().trim();
             String precioStr = txtPrecio.getText().trim();
 
-            // Si no tiene nombre y no tiene precio, no lo imprimimos en el ticket
             if (nombre.isEmpty() && precioStr.isEmpty()) continue;
 
             int cant = 1;
             double precio = 0.0;
 
-            // Convertimos los textos a números (atrapando errores si escriben cosas raras o dejan vacío)
             try { if (!cantStr.isEmpty()) cant = Integer.parseInt(cantStr); } catch (Exception ignored) {}
             try { if (!precioStr.isEmpty()) precio = Double.parseDouble(precioStr); } catch (Exception ignored) {}
 
-            // Calculamos el subtotal de esta fila
             double subtotal = cant * precio;
-            granTotal += subtotal; // Sumamos a la cuenta total
+            granTotal += subtotal;
 
-            // 3. Dibujamos la fila en el Ticket
             HBox ticketRow = new HBox();
 
             Label lNom = new Label(nombre.isEmpty() ? "---" : nombre.toUpperCase());
@@ -280,14 +260,13 @@ public class GenerarTicketView {
             Label lSubtotal = new Label(String.format("$%.2f", subtotal));
             lSubtotal.setPrefWidth(60);
             lSubtotal.setAlignment(Pos.CENTER_RIGHT);
-            lSubtotal.setFont(Font.font("Courier New", FontWeight.BOLD, 10)); // Subtotal en negrita
+            lSubtotal.setFont(Font.font("Courier New", FontWeight.BOLD, 10));
             lSubtotal.setStyle("-fx-text-fill: black;");
 
             ticketRow.getChildren().addAll(lNom, lCant, lPrecio, lSubtotal);
-            contenedorTicketProductos.getChildren().add(ticketRow); // Añadimos al ticket
+            contenedorTicketProductos.getChildren().add(ticketRow);
         }
 
-        // 4. Actualizamos el Gran Total en la pantalla
         lblTicketTotalNum.setText(String.format("$%.2f", granTotal));
     }
 
@@ -298,14 +277,12 @@ public class GenerarTicketView {
         return tf;
     }
 
-    // ==========================================
-    // PARTE DERECHA: VISTA PREVIA DEL TICKET
-    // ==========================================
     private VBox crearPanelTicket() {
         VBox contenedor = new VBox();
         contenedor.setAlignment(Pos.TOP_CENTER);
 
         ticketPaper = new VBox(5);
+        ticketPaper.setAlignment(Pos.TOP_CENTER);
         ticketPaper.setPadding(new Insets(30));
         ticketPaper.setStyle("-fx-background-color: #ffffff;");
         ticketPaper.setMaxWidth(350);
@@ -328,6 +305,23 @@ public class GenerarTicketView {
     }
 
     private void construirDisenoTicket() {
+        ImageView logoView = new ImageView();
+        try {
+            InputStream imageStream = getClass().getResourceAsStream("/sistemafarmacia/assets/icons/logo.png");
+
+            if (imageStream != null) {
+                Image image = new Image(imageStream);
+                logoView.setImage(image);
+
+                logoView.setFitWidth(120);
+                logoView.setPreserveRatio(true);
+
+                VBox.setMargin(logoView, new Insets(0, 0, 10, 0));
+            }
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+
         Label lblNombre = new Label("UNIDAD DE HEMODIÁLISIS\nINTEGRAL SAN RAFAEL");
         lblNombre.setFont(Font.font("Courier New", FontWeight.BOLD, 15));
         lblNombre.setTextAlignment(TextAlignment.CENTER);
@@ -382,7 +376,6 @@ public class GenerarTicketView {
         hTotal.setPrefWidth(60); hTotal.setAlignment(Pos.CENTER_RIGHT);
         headerTabla.getChildren().addAll(hProd, hCant, hPrecio, hTotal);
 
-        // --- CONTENEDOR NUEVO PARA LAS FILAS DEL TICKET ---
         contenedorTicketProductos = new VBox(2);
 
         HBox totalBox = new HBox();
@@ -393,7 +386,6 @@ public class GenerarTicketView {
 
         Region spacer = new Region(); HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        // INICIALIZAMOS EL TOTAL
         lblTicketTotalNum = new Label("$0.00");
         lblTicketTotalNum.setFont(Font.font("Courier New", FontWeight.BOLD, 14));
         lblTicketTotalNum.setStyle("-fx-text-fill: black;");
@@ -407,6 +399,7 @@ public class GenerarTicketView {
         lblFooter.setStyle("-fx-text-fill: #666666;");
 
         ticketPaper.getChildren().addAll(
+                logoView,
                 lblNombre,
                 lblTicketDireccion,
                 lblTicketNumero,
@@ -415,7 +408,7 @@ public class GenerarTicketView {
                 separadorTicket(),
                 headerTabla,
                 separadorTicket(),
-                contenedorTicketProductos, // <- Agregamos el contenedor de los productos aquí
+                contenedorTicketProductos,
                 separadorTicket(),
                 totalBox,
                 lblFooter
@@ -448,36 +441,25 @@ public class GenerarTicketView {
         return row;
     }
 
-    //IMPRIMIR EL TICKET
     private void imprimirTicket() {
-        // 1. Creamos un "Trabajo de Impresión"
         PrinterJob job = PrinterJob.createPrinterJob();
 
         if (job != null) {
-            // 2. Mostramos el cuadro de diálogo de Windows para elegir impresora
-            // Necesitamos pasarle la "ventana" actual
             boolean continuar = job.showPrintDialog(root.getScene().getWindow());
 
             if (continuar) {
-                // TRUCO PRO: Quitamos la sombra 3D para que la impresora no intente imprimirla
                 ticketPaper.setEffect(null);
 
-                // 3. ¡Mandamos el papel blanco a la impresora!
                 boolean impreso = job.printPage(ticketPaper);
 
                 if (impreso) {
-                    job.endJob(); // Finalizamos el proceso
-                    System.out.println("¡Ticket impreso correctamente!");
-                } else {
-                    System.out.println("Error al intentar imprimir.");
+                    job.endJob();
                 }
 
-                // Le devolvemos su sombra para que se siga viendo bonito en pantalla
                 DropShadow shadow = new DropShadow(15, Color.color(0,0,0, 0.5));
                 ticketPaper.setEffect(shadow);
             }
         } else {
-            // Si entra aquí, es porque la computadora no tiene ni el "Microsoft Print to PDF" instalado
             Alert alerta = new Alert(Alert.AlertType.ERROR);
             alerta.setTitle("Error de Impresora");
             alerta.setHeaderText(null);
@@ -489,6 +471,4 @@ public class GenerarTicketView {
     public BorderPane getRoot() {
         return root;
     }
-
-
 }
