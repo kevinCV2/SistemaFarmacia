@@ -1,4 +1,4 @@
-package sistemafarmacia.ui;
+ package sistemafarmacia.ui;
 
 import javafx.geometry.Insets;
 import javafx.scene.layout.*;
@@ -21,7 +21,7 @@ public class DashboardView {
         // HEADER
         root.setTop(UIComponents.createHeader());
 
-        // CONTENIDO
+        // CONTENIDO INICIAL
         root.setCenter(createCenter());
     }
 
@@ -30,7 +30,7 @@ public class DashboardView {
         VBox container = new VBox(25);
         container.setPadding(new Insets(20));
 
-        // TARJETAS SUPERIORES (OCUPAN TODO EL ANCHO)
+        // ===== TARJETAS SUPERIORES =====
         HBox stats = new HBox(20);
         stats.setPrefWidth(Double.MAX_VALUE);
 
@@ -58,85 +58,104 @@ public class DashboardView {
 
         stats.getChildren().addAll(card1, card2, card3);
 
-        // TARJETAS GRANDES (OCUPAN TODO EL ANCHO)
+        // ===== TARJETAS PRINCIPALES =====
         GridPane grid = new GridPane();
         grid.setHgap(20);
         grid.setVgap(20);
         grid.setMaxWidth(Double.MAX_VALUE);
 
-        // COLUMNAS AL 100% DEL ANCHO (3 POR FILA)
         ColumnConstraints col = new ColumnConstraints();
         col.setPercentWidth(33.33);
         col.setHgrow(Priority.ALWAYS);
         grid.getColumnConstraints().addAll(col, col, col);
 
-            grid.add(
-                    UIComponents.bigCard(
-                            "Catálogo de Medicamentos",
-                            "#374151",
-                            "/sistemafarmacia/assets/icons/Catálogo.png",
-                            () -> root.setCenter(
-                                    new CatalogoView(
-                                            () -> root.setCenter(createCenter())
-                                    ).getRoot()
-                            )
-                    ), 0, 0
-            );
+        // ----- CATÁLOGO -----
+        grid.add(
+                UIComponents.bigCard(
+                        "Catálogo de Medicamentos",
+                        "#374151",
+                        "/sistemafarmacia/assets/icons/Catálogo.png",
+                        () -> root.setCenter(
+                                new CatalogoView(
+                                        () -> root.setCenter(createCenter())
+                                ).getRoot()
+                        )
+                ), 0, 0
+        );
 
+        // ----- NUEVO PRODUCTO -----
         grid.add(
                 UIComponents.bigCard(
                         "Nuevo Producto",
                         "#374151",
                         "/sistemafarmacia/assets/icons/Nuevo producto.png",
-                        () -> root.setCenter(new NuevoProductoView().getRoot())
+                        () -> root.setCenter(
+                                new NuevoProductoView(
+                                        () -> root.setCenter(createCenter())
+                                ).getRoot()
+                        )
                 ), 1, 0
         );
 
+        // ----- SESIONES -----
         grid.add(
                 UIComponents.bigCard(
                         "Sesiones y Ventas",
                         "#374151",
                         "/sistemafarmacia/assets/icons/Sesiones y ventas.png",
-                       () -> root.setCenter(new SesionesView().getRoot())
+                           () -> root.setCenter(
+                                new SesionesView(
+                                        () -> root.setCenter(createCenter())
+                                ).getRoot()
+                        )
                 ), 2, 0
         );
 
+        // ----- GENERAR TICKET -----
         grid.add(
                 UIComponents.bigCard(
                         "Generar Ticket",
                         "#374151",
                         "/sistemafarmacia/assets/icons/Generar ticket.png",
-                        () -> root.setCenter(new GenerarTicketView(
-                                () ->root.setCenter(createCenter())
-                        ).getRoot())
+                        () -> root.setCenter(
+                                new GenerarTicketView(
+                                        () -> root.setCenter(createCenter())
+                                ).getRoot()
+                        )
                 ), 0, 1
         );
 
+        // ----- CORTES SEMANALES -----
         grid.add(
                 UIComponents.bigCard(
-                        "Cortes semanales",
+                        "Cortes Semanales",
                         "#374151",
                         "/sistemafarmacia/assets/icons/Cortes semanales.png",
-                        () -> {
-                            root.setCenter(new CortesSemanalesView(
-                                    () -> root.setCenter(createCenter())
-                            ).getRoot());
-                        }
+                        () -> root.setCenter(
+                                new CortesSemanalesView(
+                                        () -> root.setCenter(createCenter())
+                                ).getRoot()
+                        )
                 ), 1, 1
         );
 
+        // ----- FILTROS -----
         grid.add(
                 UIComponents.bigCard(
                         "Filtros",
                         "#374151",
                         "/sistemafarmacia/assets/icons/Filtros.png",
-                        () -> root.setCenter(new FiltrosView().getRoot())
+                        () -> root.setCenter(
+                                new FiltrosView(
+                                        () -> root.setCenter(createCenter())
+                                ).getRoot()
+                        )
                 ), 2, 1
         );
 
         VBox.setVgrow(grid, Priority.ALWAYS);
-
         container.getChildren().addAll(stats, grid);
+
         return container;
     }
 

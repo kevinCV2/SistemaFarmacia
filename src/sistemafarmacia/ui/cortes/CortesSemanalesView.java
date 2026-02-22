@@ -9,6 +9,10 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.util.Callback;
 import sistemafarmacia.utils.UIComponents;
+import sistemafarmacia.utils.ConexionDB;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.Statement;
 
 import java.time.LocalDate;
 
@@ -169,22 +173,68 @@ public class CortesSemanalesView {
         table.getColumns().addAll(colNumero, colPresentacion, colDescripcion,
                 colExistencia, colEntrada, colSalida, colInvFinal);
 
-        //Datos de prueba
-        table.getItems().add(new CorteRenglon("S  E  S  I  O  N  E  S"));
-        table.getItems().add(new CorteRenglon("1", "EJEMPLO", "SOLUCIONES EJEMPLO", "44", "0", "0", "44"));
-        table.getItems().add(new CorteRenglon("R E U S O"));
-        table.getItems().add(new CorteRenglon("1", "EJEMPLO", "SOLUCIONES EJEMPLO", "44", "0", "0", "44"));
-        table.getItems().add(new CorteRenglon("KITS CONEXIÓN / DESCONEXION"));
-        table.getItems().add(new CorteRenglon("1", "EJEMPLO", "SOLUCIONES EJEMPLO", "44", "0", "0", "44"));
-        table.getItems().add(new CorteRenglon("V E S T I D O R E S"));
-        table.getItems().add(new CorteRenglon("1", "EJEMPLO", "SOLUCIONES EJEMPLO", "44", "0", "0", "44"));
-        table.getItems().add(new CorteRenglon("CARRO ROJO"));
-        table.getItems().add(new CorteRenglon("1", "EJEMPLO", "SOLUCIONES EJEMPLO", "44", "0", "0", "44"));
-        table.getItems().add(new CorteRenglon("F I L T R O S"));
-        table.getItems().add(new CorteRenglon("1", "EJEMPLO", "SOLUCIONES EJEMPLO", "44", "0", "0", "44"));
-        table.getItems().add(new CorteRenglon("SERVICIOS GENERALES"));
-        table.getItems().add(new CorteRenglon("1", "EJEMPLO", "SOLUCIONES EJEMPLO", "44", "0", "0", "44"));
+        
+        try {
+            Connection conn = ConexionDB.getInstance();
 
+            String sql = """
+                SELECT 
+                    c.nombre AS categoria,
+                    m.nombre AS medicamento,
+                    m.stock AS existencia,
+                    COALESCE(SUM(CASE WHEN mi.tipo = 'ENTRADA' THEN mi.cantidad END),0) AS entrada,
+                    COALESCE(SUM(CASE WHEN mi.tipo = 'SALIDA' THEN mi.cantidad END),0) AS salida,
+                    (m.stock 
+                     + COALESCE(SUM(CASE WHEN mi.tipo = 'ENTRADA' THEN mi.cantidad END),0)
+                     - COALESCE(SUM(CASE WHEN mi.tipo = 'SALIDA' THEN mi.cantidad END),0)
+                    ) AS inventario_final
+                FROM categorias c
+                JOIN medicamentos m ON m.id_categoria = c.id_categoria
+                LEFT JOIN movimientos_inventario mi ON mi.id_medicamento = m.id_medicamento
+                GROUP BY c.nombre, m.nombre, m.stock, c.id_categoria
+                ORDER BY c.id_categoria, m.nombre;
+            """;
+
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(sql);
+
+            String categoriaActual = "";
+
+            int contador = 1;
+
+            while (rs.next()) {
+
+                String categoria = rs.getString("categoria");
+
+                // Crear sección
+                if (!categoria.equals(categoriaActual)) {
+
+                    table.getItems().add(
+                        new CorteRenglon(categoria)
+                    );
+
+                    categoriaActual = categoria;
+                    contador = 1;
+                }
+
+                table.getItems().add(
+                    new CorteRenglon(
+                        String.valueOf(contador),
+                        "PZA",
+                        rs.getString("medicamento"),
+                        rs.getString("existencia"),
+                        rs.getString("entrada"),
+                        rs.getString("salida"),
+                        rs.getString("inventario_final")
+                    )
+                );
+
+                contador++;
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
         return table;
     }
