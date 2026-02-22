@@ -27,7 +27,6 @@ public class CortesSemanalesView {
         VBox content = new VBox(20);
         content.setPadding(new Insets(20));
 
-        // --- TOP BAR ---
         HBox topBar = new HBox(25);
         topBar.setAlignment(Pos.CENTER_LEFT);
 
@@ -52,7 +51,6 @@ public class CortesSemanalesView {
 
         topBar.getChildren().addAll(btnVolver, headerText);
 
-        // --- STATS PANEL ---
         HBox statsPanel = new HBox(20);
         Region cardVentas = UIComponents.statCard("Ventas Semanales", "$0.00", "/sistemafarmacia/assets/icons/Ventas2.png");
         Region cardCortes = UIComponents.statCard("Cortes Generados", "0", "/sistemafarmacia/assets/icons/Cortes semanales.png");
@@ -60,7 +58,6 @@ public class CortesSemanalesView {
         HBox.setHgrow(cardCortes, Priority.ALWAYS);
         statsPanel.getChildren().addAll(cardVentas, cardCortes);
 
-        // --- TOOLBAR & TABLE ---
         HBox toolbar = createToolbar();
         tablaCortes = createTable();
 
@@ -90,12 +87,10 @@ public class CortesSemanalesView {
     private TableView<CorteRenglon> createTable() {
         TableView<CorteRenglon> table = new TableView<>();
 
-        // 1. ACTIVAMOS ESTO PARA QUE NO HAYA COLUMNAS VACÍAS A LA DERECHA
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
         table.setStyle("-fx-base: #1f2933; -fx-control-inner-background: #111827; -fx-background-color: #111827;");
 
-        // --- LÓGICA DE FILAS (PINTAR SECCIONES) ---
         table.setRowFactory(tv -> new TableRow<>() {
             @Override
             protected void updateItem(CorteRenglon item, boolean empty) {
@@ -110,24 +105,21 @@ public class CortesSemanalesView {
             }
         });
 
-        // --- DEFINICIÓN DE COLUMNAS CON PESOS ---
-        // El truco con CONSTRAINED_RESIZE_POLICY es que "setMaxWidth" funciona como un porcentaje/peso.
 
         TableColumn<CorteRenglon, String> colNumero = new TableColumn<>("No.");
         colNumero.setCellValueFactory(new PropertyValueFactory<>("numero"));
-        colNumero.setMaxWidth(800); // Peso pequeño (aprox 5%)
+        colNumero.setMaxWidth(800);
         colNumero.setStyle("-fx-alignment: CENTER;");
 
         TableColumn<CorteRenglon, String> colPresentacion = new TableColumn<>("Presentación");
         colPresentacion.setCellValueFactory(new PropertyValueFactory<>("presentacion"));
-        colPresentacion.setMaxWidth(2000); // Peso mediano (aprox 15%)
+        colPresentacion.setMaxWidth(2000);
         colPresentacion.setStyle("-fx-alignment: CENTER-LEFT;");
 
         TableColumn<CorteRenglon, String> colDescripcion = new TableColumn<>("Descripción");
         colDescripcion.setCellValueFactory(new PropertyValueFactory<>("descripcion"));
-        colDescripcion.setMaxWidth(10000); // ¡PESO GIGANTE! (aprox 50%) - Se come el espacio sobrante
+        colDescripcion.setMaxWidth(10000);
 
-        // Renderizado especial para centrar si es título
         colDescripcion.setCellFactory(new Callback<>() {
             @Override
             public TableCell<CorteRenglon, String> call(TableColumn<CorteRenglon, String> param) {
@@ -174,11 +166,10 @@ public class CortesSemanalesView {
         colInvFinal.setMaxWidth(1200);
         colInvFinal.setStyle("-fx-alignment: CENTER; -fx-font-weight: bold;");
 
-        // Agregamos las columnas
         table.getColumns().addAll(colNumero, colPresentacion, colDescripcion,
                 colExistencia, colEntrada, colSalida, colInvFinal);
 
-        // --- DATOS DE PRUEBA ---
+        //Datos de prueba
         table.getItems().add(new CorteRenglon("S  E  S  I  O  N  E  S"));
         table.getItems().add(new CorteRenglon("1", "EJEMPLO", "SOLUCIONES EJEMPLO", "44", "0", "0", "44"));
         table.getItems().add(new CorteRenglon("R E U S O"));
@@ -198,9 +189,10 @@ public class CortesSemanalesView {
         return table;
     }
 
-    public BorderPane getRoot() { return root; }
+    public BorderPane getRoot() {
+        return root;
+    }
 
-    // Clase DTO
     public static class CorteRenglon {
         public String numero;
         public String presentacion;
@@ -224,7 +216,6 @@ public class CortesSemanalesView {
             this.esSeccion = true;
         }
 
-        // Getters para PropertyValueFactory
         public String getNumero() { return numero; }
         public String getPresentacion() { return presentacion; }
         public String getDescripcion() { return descripcion; }

@@ -104,9 +104,11 @@ public class DashboardView {
         grid.add(
                 UIComponents.bigCard(
                         "Generar Ticket",
-                        "#374151",
+                        "#14b8a6",
                         "/sistemafarmacia/assets/icons/Generar ticket.png",
-                        () -> root.setCenter(new GenerarTicketView().getRoot())
+                        () -> root.setCenter(new GenerarTicketView(
+                                () ->root.setCenter(createCenter())
+                        ).getRoot())
                 ), 0, 1
         );
 
