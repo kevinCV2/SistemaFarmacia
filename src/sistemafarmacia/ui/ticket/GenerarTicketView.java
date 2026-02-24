@@ -14,8 +14,13 @@ import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 import javafx.print.*;
 import javafx.scene.transform.Scale;
+import sistemafarmacia.utils.ConexionDB;
 
 import java.io.InputStream;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 
@@ -25,17 +30,21 @@ public class GenerarTicketView {
     private VBox ticketPaper;
     private Runnable actionVolver;
 
-    // Elementos de la vista previa del Ticket
+    // Elementos de la vista previa del Ticket (Derecha)
     private Label lblTicketDireccion;
     private Label lblTicketNumero;
     private Label lblTicketPacienteValor;
     private Label lblTicketIdValor;
-
-    // Campos del Formulario (Panel Izquierdo)
-    private TextField txtIdTicket;
-    private VBox contenedorProductosFormulario;
     private VBox contenedorTicketProductos;
     private Label lblTicketTotalNum;
+
+    // Campos del Formulario (Izquierda)
+    private TextField txtIdTicket;
+    private TextField txtDireccion;
+    private TextField txtNumero;
+    private TextField txtPaciente;
+    private VBox contenedorProductosFormulario;
+    private VBox contenedorSesionesFormulario;
 
     private static int contadorTicket = 1;
 
@@ -52,9 +61,7 @@ public class GenerarTicketView {
 
         Button btnVolver = new Button("⬅ Regresar");
         btnVolver.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-border-color: #374151; -fx-border-radius: 5; -fx-cursor: hand;");
-        btnVolver.setOnAction(e -> {
-            if (this.actionVolver != null) this.actionVolver.run();
-        });
+        btnVolver.setOnAction(e -> { if (this.actionVolver != null) this.actionVolver.run(); });
 
         Label title = new Label("Generador de Tickets");
         title.setFont(Font.font("System", FontWeight.BOLD, 22));
@@ -78,6 +85,8 @@ public class GenerarTicketView {
 
         splitLayout.getChildren().addAll(panelIzquierdo, panelDerecho);
         root.setCenter(splitLayout);
+
+        obtenerUltimoFolioYDatosSesion();
     }
 
     private VBox crearPanelFormulario() {
@@ -85,103 +94,96 @@ public class GenerarTicketView {
         VBox contenidoScroll = new VBox(20);
         contenidoScroll.setPadding(new Insets(0, 10, 0, 0));
 
-        // CARD: DATOS DE VENTA
+        // CARD: DATOS GENERALES
         VBox cardDatos = new VBox(15);
         cardDatos.setStyle("-fx-background-color: #111827; -fx-padding: 20; -fx-background-radius: 10;");
 
-        Label lblDatos = new Label("Datos de la Venta");
-        lblDatos.setStyle("-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 16px;");
-
-        // Campo ID sincronizado
-        txtIdTicket = crearTextField("Folio del ticket");
-        txtIdTicket.setText(String.format("%06d", contadorTicket));
-        txtIdTicket.textProperty().addListener((obs, old, newValue) -> {
-            if (lblTicketIdValor != null) lblTicketIdValor.setText(newValue);
-        });
-
-        TextField txtDireccion = crearTextField("C. valle embrujado 131...");
-        txtDireccion.textProperty().addListener((obs, old, newValue) -> lblTicketDireccion.setText(newValue.replace(", ", ",\n")));
-
-        TextField txtNumero = crearTextField("Teléfono");
-        txtNumero.textProperty().addListener((obs, old, newValue) -> lblTicketNumero.setText("TEL: " + newValue));
-
-        TextField txtPaciente = crearTextField("Nombre del Paciente");
-        txtPaciente.textProperty().addListener((obs, old, newValue) -> lblTicketPacienteValor.setText(newValue.trim().isEmpty() ? "MOSTRADOR" : newValue.toUpperCase()));
+        txtIdTicket = crearTextField("Folio");
+        txtIdTicket.setEditable(false);
+        txtDireccion = crearTextField("Dirección...");
+        txtDireccion.textProperty().addListener((obs, old, nv) -> lblTicketDireccion.setText(nv.replace(", ", ",\n")));
+        txtNumero = crearTextField("Teléfono");
+        txtNumero.textProperty().addListener((obs, old, nv) -> lblTicketNumero.setText("TEL: " + nv));
+        txtPaciente = crearTextField("Nombre del Paciente");
+        txtPaciente.textProperty().addListener((obs, old, nv) -> lblTicketPacienteValor.setText(nv.isEmpty() ? "MOSTRADOR" : nv.toUpperCase()));
 
         cardDatos.getChildren().addAll(
-            lblDatos, 
-            new Label("Folio / ID Ticket") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, txtIdTicket,
-            new Label("Dirección") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, txtDireccion, 
-            new Label("Teléfono") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, txtNumero, 
+            new Label("Datos de la Venta") {{ setStyle("-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 16px;"); }},
+            new Label("Folio") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, txtIdTicket,
+            new Label("Dirección") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, txtDireccion,
+            new Label("Teléfono") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, txtNumero,
             new Label("Paciente") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, txtPaciente
         );
 
         // CARD: PRODUCTOS
         VBox cardProductos = new VBox(15);
         cardProductos.setStyle("-fx-background-color: #111827; -fx-padding: 20; -fx-background-radius: 10;");
-
-        HBox headerProd = new HBox();
-        headerProd.setAlignment(Pos.CENTER_LEFT);
-        Label lblProd = new Label("Productos");
-        lblProd.setStyle("-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 16px;");
-
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-
         contenedorProductosFormulario = new VBox(10);
-        Button btnAgregar = new Button("+ Agregar");
-        btnAgregar.setStyle("-fx-background-color: #4b5563; -fx-text-fill: white; -fx-cursor: hand; -fx-background-radius: 5;");
-        btnAgregar.setOnAction(e -> agregarFilaProducto());
+        Button btnAddProd = new Button("+ Agregar Producto");
+        btnAddProd.setStyle("-fx-background-color: #4b5563; -fx-text-fill: white; -fx-cursor: hand;");
+        btnAddProd.setOnAction(e -> agregarFilaProductoManual());
+        
+        cardProductos.getChildren().addAll(
+            new HBox(new Label("Productos") {{ setStyle("-fx-text-fill: white; -fx-font-weight: bold;"); }}, new Region() {{ HBox.setHgrow(this, Priority.ALWAYS); }}, btnAddProd),
+            contenedorProductosFormulario
+        );
 
-        headerProd.getChildren().addAll(lblProd, spacer, btnAgregar);
-        cardProductos.getChildren().addAll(headerProd, contenedorProductosFormulario);
+        // CARD: SESIONES
+        VBox cardSesiones = new VBox(15);
+        cardSesiones.setStyle("-fx-background-color: #111827; -fx-padding: 20; -fx-background-radius: 10;");
+        contenedorSesionesFormulario = new VBox(10);
+        Button btnAddSesion = new Button("+ Agregar Sesión");
+        btnAddSesion.setStyle("-fx-background-color: #4b5563; -fx-text-fill: white; -fx-cursor: hand;");
+        btnAddSesion.setOnAction(e -> agregarFilaSesionManual());
 
-        agregarFilaProducto();
+        cardSesiones.getChildren().addAll(
+            new HBox(new Label("Sesiones") {{ setStyle("-fx-text-fill: white; -fx-font-weight: bold;"); }}, new Region() {{ HBox.setHgrow(this, Priority.ALWAYS); }}, btnAddSesion),
+            contenedorSesionesFormulario
+        );
 
-        contenidoScroll.getChildren().addAll(cardDatos, cardProductos);
-        ScrollPane scrollPane = new ScrollPane(contenidoScroll);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setStyle("-fx-base: #1f2933; -fx-background: transparent; -fx-background-color: transparent; -fx-border-color: transparent;");
-        VBox.setVgrow(scrollPane, Priority.ALWAYS);
-
-        // BOTÓN IMPRIMIR
-        Button btnImprimir = new Button("🖨 Imprimir ticket");
-        btnImprimir.setStyle("-fx-background-color: #10b981; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 15; -fx-font-size: 16px; -fx-background-radius: 8; -fx-cursor: hand;");
+        contenidoScroll.getChildren().addAll(cardDatos, cardProductos, cardSesiones);
+        ScrollPane scroll = new ScrollPane(contenidoScroll);
+        scroll.setFitToWidth(true);
+        scroll.setStyle("-fx-background: transparent; -fx-background-color: transparent; -fx-border-color: transparent;");
+        
+        Button btnImprimir = new Button("🖨 Guardar e Imprimir ticket");
+        btnImprimir.setStyle("-fx-background-color: #10b981; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 15; -fx-background-radius: 8; -fx-cursor: hand;");
         btnImprimir.setMaxWidth(Double.MAX_VALUE);
         btnImprimir.setOnAction(e -> imprimirTicket());
 
-        panelPrincipal.getChildren().addAll(scrollPane, btnImprimir);
+        panelPrincipal.getChildren().addAll(scroll, btnImprimir);
+        VBox.setVgrow(scroll, Priority.ALWAYS);
         return panelPrincipal;
     }
 
-    private void agregarFilaProducto() {
+    private void agregarFilaProductoManual() {
         HBox fila = new HBox(10);
+        TextField tNom = crearTextField("Producto"); HBox.setHgrow(tNom, Priority.ALWAYS);
+        TextField tCan = crearTextField("Cant"); tCan.setPrefWidth(50); tCan.setText("1");
+        TextField tPre = crearTextField("Precio"); tPre.setPrefWidth(80);
+        Button btnDel = new Button("×"); btnDel.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white;");
+        btnDel.setOnAction(e -> { contenedorProductosFormulario.getChildren().remove(fila); actualizarTablaTicket(); });
         
-        TextField txtNomProd = crearTextField("Producto");
-        HBox.setHgrow(txtNomProd, Priority.ALWAYS);
-
-        TextField txtCant = crearTextField("Cant");
-        txtCant.setPrefWidth(50); txtCant.setText("1");
-
-        TextField txtPrecio = crearTextField("Precio");
-        txtPrecio.setPrefWidth(80);
-
-        Button btnEliminar = new Button("×");
-        btnEliminar.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; -fx-cursor: hand; -fx-background-radius: 5;");
-        btnEliminar.setOnAction(e -> {
-            if(contenedorProductosFormulario.getChildren().size() > 1) {
-                contenedorProductosFormulario.getChildren().remove(fila);
-                actualizarTablaTicket();
-            }
-        });
-
-        txtNomProd.textProperty().addListener((obs, old, newV) -> actualizarTablaTicket());
-        txtCant.textProperty().addListener((obs, old, newV) -> actualizarTablaTicket());
-        txtPrecio.textProperty().addListener((obs, old, newV) -> actualizarTablaTicket());
-
-        fila.getChildren().addAll(txtNomProd, txtCant, txtPrecio, btnEliminar);
+        tNom.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
+        tCan.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
+        tPre.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
+        
+        fila.getChildren().addAll(tNom, tCan, tPre, btnDel);
         contenedorProductosFormulario.getChildren().add(fila);
-        actualizarTablaTicket();
+    }
+
+    private void agregarFilaSesionManual() {
+        HBox fila = new HBox(10);
+        TextField tTipo = crearTextField("Tipo de Sesión"); HBox.setHgrow(tTipo, Priority.ALWAYS);
+        TextField tCosto = crearTextField("Costo"); tCosto.setPrefWidth(100); tCosto.setText("0.00");
+        Button btnDel = new Button("×"); btnDel.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white;");
+        btnDel.setOnAction(e -> { contenedorSesionesFormulario.getChildren().remove(fila); actualizarTablaTicket(); });
+
+        tTipo.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
+        tCosto.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
+
+        fila.getChildren().addAll(tTipo, tCosto, btnDel);
+        contenedorSesionesFormulario.getChildren().add(fila);
     }
 
     private void actualizarTablaTicket() {
@@ -189,198 +191,135 @@ public class GenerarTicketView {
         contenedorTicketProductos.getChildren().clear();
         double granTotal = 0.0;
 
-        for (Node nodo : contenedorProductosFormulario.getChildren()) {
-            HBox fila = (HBox) nodo;
-            TextField txtNom = (TextField) fila.getChildren().get(0);
-            TextField txtCant = (TextField) fila.getChildren().get(1);
-            TextField txtPrecio = (TextField) fila.getChildren().get(2);
+        for (Node n : contenedorProductosFormulario.getChildren()) {
+            HBox f = (HBox) n;
+            String nom = ((TextField)f.getChildren().get(0)).getText();
+            if (nom.isEmpty()) continue;
+            int can = 1; double pre = 0.0;
+            try { can = Integer.parseInt(((TextField)f.getChildren().get(1)).getText()); } catch(Exception e){}
+            try { pre = Double.parseDouble(((TextField)f.getChildren().get(2)).getText()); } catch(Exception e){}
+            granTotal += (can * pre);
+            contenedorTicketProductos.getChildren().add(crearFilaTicketUI(nom, can, can * pre));
+        }
 
-            String nombre = txtNom.getText().trim();
-            String cantStr = txtCant.getText().trim();
-            String precioStr = txtPrecio.getText().trim();
-
-            if (nombre.isEmpty() && precioStr.isEmpty()) continue;
-
-            int cant = 1; double precio = 0.0;
-            try { if (!cantStr.isEmpty()) cant = Integer.parseInt(cantStr); } catch (Exception ignored) {}
-            try { if (!precioStr.isEmpty()) precio = Double.parseDouble(precioStr); } catch (Exception ignored) {}
-
-            granTotal += (cant * precio);
-
-            HBox ticketRow = new HBox();
-            ticketRow.setAlignment(Pos.CENTER_LEFT);
-
-            Label lNom = new Label(nombre.isEmpty() ? "---" : nombre.toUpperCase());
-            lNom.setPrefWidth(180); 
-            lNom.setFont(Font.font("Courier New", FontWeight.BOLD, 14)); 
-            lNom.setStyle("-fx-text-fill: black;");
-            lNom.setWrapText(true);
-
-            Label lCant = new Label(String.valueOf(cant));
-            lCant.setPrefWidth(40); 
-            lCant.setAlignment(Pos.CENTER); 
-            lCant.setFont(Font.font("Courier New", FontWeight.BOLD, 14)); 
-            lCant.setStyle("-fx-text-fill: black;");
-
-            Label lPrecio = new Label(String.format("$%.2f", precio));
-            lPrecio.setPrefWidth(100); 
-            lPrecio.setAlignment(Pos.CENTER_RIGHT); 
-            lPrecio.setFont(Font.font("Courier New", FontWeight.BOLD, 14)); 
-            lPrecio.setStyle("-fx-text-fill: black;");
-
-            ticketRow.getChildren().addAll(lNom, lCant, lPrecio);
-            contenedorTicketProductos.getChildren().add(ticketRow);
+        for (Node n : contenedorSesionesFormulario.getChildren()) {
+            HBox f = (HBox) n;
+            String tipo = ((TextField)f.getChildren().get(0)).getText();
+            if (tipo.isEmpty()) continue;
+            double costo = 0.0;
+            try { costo = Double.parseDouble(((TextField)f.getChildren().get(1)).getText()); } catch(Exception e){}
+            granTotal += costo;
+            contenedorTicketProductos.getChildren().add(crearFilaTicketUI(tipo, 1, costo));
         }
         lblTicketTotalNum.setText(String.format("$%.2f", granTotal));
+    }
+
+    private HBox crearFilaTicketUI(String nombre, int cant, double total) {
+        HBox row = new HBox();
+        row.setAlignment(Pos.CENTER_LEFT);
+        Label lN = new Label(nombre.toUpperCase()); lN.setPrefWidth(180); lN.setFont(Font.font("Courier New", FontWeight.BOLD, 14)); lN.setStyle("-fx-text-fill: black;");
+        Label lC = new Label(String.valueOf(cant)); lC.setPrefWidth(40); lC.setAlignment(Pos.CENTER); lC.setFont(Font.font("Courier New", FontWeight.BOLD, 14)); lC.setStyle("-fx-text-fill: black;");
+        Label lP = new Label(String.format("$%.2f", total)); lP.setPrefWidth(100); lP.setAlignment(Pos.CENTER_RIGHT); lP.setFont(Font.font("Courier New", FontWeight.BOLD, 14)); lP.setStyle("-fx-text-fill: black;");
+        row.getChildren().addAll(lN, lC, lP);
+        return row;
     }
 
     private VBox crearPanelTicket() {
         VBox contenedor = new VBox();
         contenedor.setAlignment(Pos.TOP_CENTER);
-
         ticketPaper = new VBox(8);
-        ticketPaper.setAlignment(Pos.TOP_CENTER);
         ticketPaper.setPadding(new Insets(40));
-        ticketPaper.setStyle("-fx-background-color: #ffffff;");
-        ticketPaper.setMaxWidth(420); 
-        ticketPaper.setEffect(new DropShadow(15, Color.color(0,0,0, 0.5)));
-
+        ticketPaper.setStyle("-fx-background-color: white;");
+        ticketPaper.setMaxWidth(420);
+        ticketPaper.setEffect(new DropShadow(15, Color.color(0,0,0,0.5)));
+        
         construirDisenoTicket();
-
+        
         ScrollPane scroll = new ScrollPane(ticketPaper);
         scroll.setStyle("-fx-background: #1f2933; -fx-background-color: transparent; -fx-border-color: transparent;");
         scroll.setFitToWidth(true);
-
-        StackPane centrarScroll = new StackPane(scroll);
-        centrarScroll.setAlignment(Pos.TOP_CENTER);
-        contenedor.getChildren().add(centrarScroll);
-        VBox.setVgrow(centrarScroll, Priority.ALWAYS);
+        contenedor.getChildren().add(scroll);
+        VBox.setVgrow(scroll, Priority.ALWAYS);
         return contenedor;
     }
 
     private void construirDisenoTicket() {
-        ImageView logoView = new ImageView();
-        try {
-            InputStream imageStream = getClass().getResourceAsStream("/sistemafarmacia/assets/icons/ticket.jpeg");
-            if (imageStream != null) {
-                logoView.setImage(new Image(imageStream));
-                logoView.setFitWidth(240); 
-                logoView.setPreserveRatio(true);
-            }
-        } catch (Exception e) {}
+        ticketPaper.getChildren().clear();
+        ticketPaper.setAlignment(Pos.TOP_CENTER);
+        
+        ImageView logo = new ImageView();
+        try { logo.setImage(new Image(getClass().getResourceAsStream("/sistemafarmacia/assets/icons/ticket.jpeg"))); logo.setFitWidth(240); logo.setPreserveRatio(true); } catch(Exception e){}
 
         Label lblNombre = new Label("UNIDAD DE HEMODIÁLISIS\nINTEGRAL SAN RAFAEL");
-        lblNombre.setFont(Font.font("Courier New", FontWeight.BOLD, 22));
-        lblNombre.setTextAlignment(TextAlignment.CENTER);
-        lblNombre.setStyle("-fx-text-fill: black;");
+        lblNombre.setFont(Font.font("Courier New", FontWeight.BOLD, 22)); lblNombre.setTextAlignment(TextAlignment.CENTER); lblNombre.setStyle("-fx-text-fill: black;");
 
         lblTicketDireccion = new Label("C. valle embrujado 131,\nPachuca, Hidalgo");
-        lblTicketDireccion.setFont(Font.font("Courier New", FontWeight.BOLD, 15));
-        lblTicketDireccion.setTextAlignment(TextAlignment.CENTER);
-        lblTicketDireccion.setStyle("-fx-text-fill: black;");
+        lblTicketDireccion.setFont(Font.font("Courier New", FontWeight.BOLD, 15)); lblTicketDireccion.setStyle("-fx-text-fill: black;");
 
-        lblTicketNumero = new Label("TEL: xxx-xxx-xxxx");
-        lblTicketNumero.setFont(Font.font("Courier New", FontWeight.BOLD, 15));
-        lblTicketNumero.setStyle("-fx-text-fill: black;");
+        lblTicketNumero = new Label("TEL: 7713778107, 77110227324");
+        lblTicketNumero.setFont(Font.font("Courier New", FontWeight.BOLD, 15)); lblTicketNumero.setStyle("-fx-text-fill: black;");
 
-        VBox infoBox = new VBox(15);
-        infoBox.setPadding(new Insets(20, 0, 20, 0));
-        infoBox.setAlignment(Pos.CENTER);
-
-        VBox bTicket = crearBloqueListaCentrado("No. TICKET:", String.format("%06d", contadorTicket));
-        VBox bFecha = crearBloqueListaCentrado("FECHA DE EMISIÓN:", LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
-        VBox bCliente = crearBloqueListaCentrado("PACIENTE / CLIENTE:", "MOSTRADOR");
-        
-        lblTicketIdValor = (Label) bTicket.getChildren().get(1); 
-        lblTicketPacienteValor = (Label) bCliente.getChildren().get(1); 
-        
-        infoBox.getChildren().addAll(bTicket, bFecha, bCliente);
+        VBox bTicket = crearBloqueCentrado("No. TICKET:", "000000");
+        lblTicketIdValor = (Label) bTicket.getChildren().get(1);
+        VBox bFecha = crearBloqueCentrado("FECHA DE EMISIÓN:", LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+        VBox bPaciente = crearBloqueCentrado("PACIENTE / CLIENTE:", "MOSTRADOR");
+        lblTicketPacienteValor = (Label) bPaciente.getChildren().get(1);
 
         contenedorTicketProductos = new VBox(10);
-        HBox headerTabla = new HBox() {{
-            getChildren().addAll(
-                new Label("PRODUCTO") {{ setPrefWidth(180); }}, 
-                new Label("CANT") {{ setPrefWidth(40); setAlignment(Pos.CENTER); }}, 
-                new Label("COSTO") {{ setPrefWidth(100); setAlignment(Pos.CENTER_RIGHT); }}
-            );
-            getChildren().forEach(n -> { 
-                ((Label)n).setFont(Font.font("Courier New", FontWeight.BOLD, 15)); 
-                ((Label)n).setStyle("-fx-text-fill: black;"); 
-            });
-        }};
-
         lblTicketTotalNum = new Label("$0.00");
-        lblTicketTotalNum.setFont(Font.font("Courier New", FontWeight.BOLD, 26)); 
-        lblTicketTotalNum.setStyle("-fx-text-fill: black;");
-
-        Label lblDespedida = new Label("\n¡Gracias por su confianza!");
-        lblDespedida.setFont(Font.font("Courier New", FontWeight.BOLD, 15));
-        lblDespedida.setStyle("-fx-text-fill: black;");
+        lblTicketTotalNum.setFont(Font.font("Courier New", FontWeight.BOLD, 26)); lblTicketTotalNum.setStyle("-fx-text-fill: black;");
 
         ticketPaper.getChildren().addAll(
-                logoView, lblNombre, lblTicketDireccion, lblTicketNumero,
-                separadorTicket(), infoBox, separadorTicket(),
-                headerTabla, separadorTicket(), 
-                contenedorTicketProductos, separadorTicket(),
-                new HBox(new Label("TOTAL:") {{ setFont(Font.font("Courier New", FontWeight.BOLD, 20)); setStyle("-fx-text-fill: black;"); }}, new Region() {{ HBox.setHgrow(this, Priority.ALWAYS); }}, lblTicketTotalNum),
-                lblDespedida
+            logo, lblNombre, lblTicketDireccion, lblTicketNumero, separador(),
+            bTicket, bFecha, bPaciente, separador(),
+            new HBox() {{ getChildren().addAll(new Label("DESCRIPCIÓN"){{setPrefWidth(180); setStyle("-fx-text-fill: black;"); setFont(Font.font("Courier New", FontWeight.BOLD, 14));}}, new Label("CANT"){{setPrefWidth(40); setStyle("-fx-text-fill: black;"); setFont(Font.font("Courier New", FontWeight.BOLD, 14));}}, new Label("COSTO"){{setPrefWidth(100); setStyle("-fx-text-fill: black;"); setFont(Font.font("Courier New", FontWeight.BOLD, 14));}}); }},
+            separador(), contenedorTicketProductos, separador(),
+            new HBox(new Label("TOTAL:"){{setFont(Font.font("Courier New", FontWeight.BOLD, 20)); setStyle("-fx-text-fill: black;");}}, new Region(){{HBox.setHgrow(this, Priority.ALWAYS);}}, lblTicketTotalNum),
+            new Label("\n¡Gracias por su confianza!"){{setFont(Font.font("Courier New", FontWeight.BOLD, 15)); setStyle("-fx-text-fill: black;");}}
         );
     }
 
-    private VBox crearBloqueListaCentrado(String etiqueta, String valor) {
-        VBox bloque = new VBox(2);
-        bloque.setAlignment(Pos.CENTER);
-        
-        Label e = new Label(etiqueta); 
-        e.setFont(Font.font("Courier New", FontWeight.BOLD, 14)); 
-        e.setStyle("-fx-text-fill: #000000;");
-        
-        Label v = new Label(valor); 
-        v.setFont(Font.font("Courier New", FontWeight.BOLD, 22)); 
-        v.setStyle("-fx-text-fill: black;");
-        
-        bloque.getChildren().addAll(e, v);
-        return bloque;
+    private VBox crearBloqueCentrado(String e, String v) {
+        VBox b = new VBox(2); b.setAlignment(Pos.CENTER);
+        Label lE = new Label(e); lE.setFont(Font.font("Courier New", FontWeight.BOLD, 14)); lE.setStyle("-fx-text-fill: black;");
+        Label lV = new Label(v); lV.setFont(Font.font("Courier New", FontWeight.BOLD, 22)); lV.setStyle("-fx-text-fill: black;");
+        b.getChildren().addAll(lE, lV); return b;
+    }
+
+    private Label separador() {
+        return new Label("------------------------------------------") {{ setFont(Font.font("Courier New", FontWeight.BOLD, 14)); setStyle("-fx-text-fill: black;"); }};
+    }
+
+    private TextField crearTextField(String p) {
+        TextField t = new TextField(); t.setPromptText(p);
+        t.setStyle("-fx-background-color: #1f2933; -fx-text-fill: white; -fx-prompt-text-fill: #6b7280; -fx-border-color: #374151; -fx-border-radius: 5; -fx-padding: 8;");
+        return t;
+    }
+
+    private void obtenerUltimoFolioYDatosSesion() {
+        try (Connection conn = ConexionDB.getInstance(); Statement stmt = conn.createStatement()) {
+            ResultSet rsF = stmt.executeQuery("SELECT MAX(id_ticket) FROM tickets");
+            if (rsF.next()) contadorTicket = rsF.getInt(1) + 1;
+            String f = String.format("%06d", contadorTicket);
+            txtIdTicket.setText(f); lblTicketIdValor.setText(f);
+            
+            ResultSet rsS = stmt.executeQuery("SELECT paciente FROM sesiones ORDER BY id_sesion DESC LIMIT 1");
+            if (rsS.next()) txtPaciente.setText(rsS.getString("paciente"));
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
     private void imprimirTicket() {
         PrinterJob job = PrinterJob.createPrinterJob();
-        if (job != null) {
-            PageLayout pageLayout = job.getPrinter().createPageLayout(Paper.NA_LETTER, PageOrientation.PORTRAIT, Printer.MarginType.HARDWARE_MINIMUM);
-            if (job.showPrintDialog(root.getScene().getWindow())) {
-                ticketPaper.setEffect(null);
-                double scale = pageLayout.getPrintableWidth() / ticketPaper.getBoundsInParent().getWidth();
-                Scale escala = new Scale(scale, scale);
-                ticketPaper.getTransforms().add(escala);
-
-                if (job.printPage(pageLayout, ticketPaper)) {
-                    job.endJob();
-                    
-                    // INCREMENTO DEL CONTADOR
-                    contadorTicket++;
-                    String nuevoFolio = String.format("%06d", contadorTicket);
-                    txtIdTicket.setText(nuevoFolio);
-                    lblTicketIdValor.setText(nuevoFolio);
-                }
-
-                ticketPaper.getTransforms().remove(escala);
-                ticketPaper.setEffect(new DropShadow(15, Color.color(0,0,0, 0.5)));
-            }
+        if (job != null && job.showPrintDialog(root.getScene().getWindow())) {
+            PageLayout pl = job.getPrinter().createPageLayout(Paper.NA_LETTER, PageOrientation.PORTRAIT, Printer.MarginType.HARDWARE_MINIMUM);
+            ticketPaper.setEffect(null);
+            double scale = pl.getPrintableWidth() / ticketPaper.getWidth();
+            Scale s = new Scale(scale, scale);
+            ticketPaper.getTransforms().add(s);
+            if (job.printPage(pl, ticketPaper)) job.endJob();
+            ticketPaper.getTransforms().remove(s);
+            ticketPaper.setEffect(new DropShadow(15, Color.color(0,0,0,0.5)));
         }
-    }
-
-    private Label separadorTicket() {
-        return new Label("------------------------------------------") {{ 
-            setFont(Font.font("Courier New", FontWeight.BOLD, 14)); 
-            setStyle("-fx-text-fill: black;"); 
-        }};
-    }
-
-    private TextField crearTextField(String prompt) {
-        TextField tf = new TextField();
-        tf.setPromptText(prompt);
-        tf.setStyle("-fx-background-color: #1f2933; -fx-text-fill: white; -fx-prompt-text-fill: #6b7280; -fx-border-color: #374151; -fx-border-radius: 5; -fx-padding: 8;");
-        return tf;
     }
 
     public BorderPane getRoot() { return root; }

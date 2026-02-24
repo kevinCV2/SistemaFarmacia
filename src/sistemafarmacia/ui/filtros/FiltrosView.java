@@ -13,10 +13,7 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import sistemafarmacia.utils.ConexionDB;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.Statement;
+import java.sql.*;
 
 public class FiltrosView {
 
@@ -38,96 +35,124 @@ public class FiltrosView {
         topBar.setAlignment(Pos.CENTER_LEFT);
 
         Button btnVolver = new Button("⬅ Volver");
-        btnVolver.setStyle("""
-            -fx-background-color: transparent;
-            -fx-text-fill: #9ca3af;
-            -fx-border-color: #374151;
-            -fx-border-radius: 5;
-            -fx-cursor: hand;
-        """);
-
-        btnVolver.setOnAction(e -> {
-            if (actionVolver != null) actionVolver.run();
-        });
+        btnVolver.setStyle("-fx-background-color: transparent; -fx-text-fill: #9ca3af; -fx-border-color: #374151; -fx-border-radius: 5; -fx-cursor: hand;");
+        btnVolver.setOnAction(e -> { if (actionVolver != null) actionVolver.run(); });
 
         VBox headerText = new VBox(5);
         Label title = new Label("Módulo de Filtros");
         title.setFont(Font.font(26));
         title.setTextFill(Color.WHITE);
-
-        Label subtitle = new Label("Inventario exclusivo de filtros reusables y desechables");
+        Label subtitle = new Label("Control semanal exclusivo de filtros");
         subtitle.setTextFill(Color.web("#9ca3af"));
-
         headerText.getChildren().addAll(title, subtitle);
+
         topBar.getChildren().addAll(btnVolver, headerText);
 
         // --- TABLA ---
         table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
-        table.setStyle("""
-            -fx-base: #1f2933;
-            -fx-control-inner-background: #111827;
-            -fx-background-color: #111827;
-        """);
+        table.setStyle("-fx-base: #1f2933; -fx-control-inner-background: #111827; -fx-background-color: #111827;");
 
-        // Configuración de columnas idéntica a CatalogoView
-        TableColumn<ObservableList<Object>, Object> idCol = createColumn("ID", 0, Pos.CENTER);
-        idCol.setVisible(false);
+        // Configuración de columnas
+        table.getColumns().add(createColumn("ID", 0, Pos.CENTER, false));
+        table.getColumns().add(createColumn("No.", 1, Pos.CENTER, true));
+        table.getColumns().add(createColumn("Presentación", 2, Pos.CENTER_LEFT, true));
+        table.getColumns().add(createColumn("Descripción", 3, Pos.CENTER_LEFT, true));
+        table.getColumns().add(createColumn("Inicial", 4, Pos.CENTER, true));
+        table.getColumns().add(createColumn("Entrada", 5, Pos.CENTER, true));
+        table.getColumns().add(createColumn("Salidas", 6, Pos.CENTER, true));
+        table.getColumns().add(createColumn("Stock Final", 7, Pos.CENTER, true));
 
-        table.getColumns().add(idCol);
-        table.getColumns().add(createColumn("No.", 1, Pos.CENTER));
-        table.getColumns().add(createColumn("Presentación", 2, Pos.CENTER_LEFT));
-        table.getColumns().add(createColumn("Descripción", 3, Pos.CENTER_LEFT));
-        table.getColumns().add(createColumn("Existencia", 4, Pos.CENTER));
-        table.getColumns().add(createColumn("Entrada", 5, Pos.CENTER));
-        table.getColumns().add(createColumn("Salidas", 6, Pos.CENTER));
-        table.getColumns().add(createColumn("Inventario Final", 7, Pos.CENTER));
-
-        // Acciones (Editar/Eliminar)
+        // Columna de Acciones (Movimientos y Borrar)
         TableColumn<ObservableList<Object>, Void> accionesCol = new TableColumn<>("Acciones");
         accionesCol.setCellFactory(col -> new TableCell<>() {
-            private final Button btnEdit = new Button("✏️");
+            private final Button btnMov = new Button("📦");
             private final Button btnDelete = new Button("🗑");
-            private final HBox box = new HBox(8, btnEdit, btnDelete);
-
+            private final HBox box = new HBox(8, btnMov, btnDelete);
             {
                 box.setAlignment(Pos.CENTER);
-                btnEdit.setStyle("-fx-background-color:#2563eb; -fx-text-fill:white;");
+                btnMov.setStyle("-fx-background-color:#10b981; -fx-text-fill:white;");
                 btnDelete.setStyle("-fx-background-color:#dc2626; -fx-text-fill:white;");
 
-                btnEdit.setOnAction(e -> abrirVentanaEditar(getTableView().getItems().get(getIndex())));
-                btnDelete.setOnAction(e -> {
-                    ObservableList<Object> row = getTableView().getItems().get(getIndex());
-                    confirmarEliminacion(Integer.parseInt(row.get(0).toString()));
-                });
+                btnMov.setOnAction(e -> abrirVentanaMovimiento(getTableView().getItems().get(getIndex())));
+                btnDelete.setOnAction(e -> confirmarEliminacion(Integer.parseInt(getTableView().getItems().get(getIndex()).get(0).toString())));
             }
-
-            @Override
-            protected void updateItem(Void item, boolean empty) {
+            @Override protected void updateItem(Void item, boolean empty) {
                 super.updateItem(item, empty);
                 setGraphic(empty ? null : box);
             }
         });
-
         table.getColumns().add(accionesCol);
 
         VBox.setVgrow(table, Priority.ALWAYS);
         content.getChildren().addAll(topBar, table);
         root.setCenter(content);
 
-        // Carga inicial con el filtro aplicado
-        table.setItems(getFiltrosFromDB());
+        actualizarTabla();
     }
 
-    // ===== CONSULTA CON FILTRO ESPECÍFICO =====
+    private void actualizarTabla() {
+        table.setItems(getFiltrosFromDB());
+        table.refresh();
+    }
+
+    // --- LÓGICA DE MOVIMIENTOS ---
+    private void abrirVentanaMovimiento(ObservableList<Object> row) {
+        Stage modal = new Stage();
+        modal.initModality(Modality.APPLICATION_MODAL);
+        modal.setTitle("Movimiento: " + row.get(2));
+
+        VBox layout = new VBox(15);
+        layout.setPadding(new Insets(20));
+        layout.setAlignment(Pos.CENTER);
+        layout.setStyle("-fx-background-color:#111827;");
+
+        ComboBox<String> cbTipo = new ComboBox<>(FXCollections.observableArrayList("ENTRADA", "SALIDA"));
+        cbTipo.setValue("ENTRADA");
+        TextField txtCantidad = new TextField();
+        txtCantidad.setPromptText("Cantidad");
+
+        Button btnGuardar = new Button("Registrar");
+        btnGuardar.setStyle("-fx-background-color:#2563eb; -fx-text-fill:white;");
+        btnGuardar.setOnAction(e -> {
+            try {
+                registrarMovimientoInDB(Integer.parseInt(row.get(0).toString()), cbTipo.getValue(), Integer.parseInt(txtCantidad.getText()));
+                modal.close();
+                actualizarTabla();
+            } catch (Exception ex) { ex.printStackTrace(); }
+        });
+
+        layout.getChildren().addAll(new Label("Tipo:"), cbTipo, new Label("Cantidad:"), txtCantidad, btnGuardar);
+        modal.setScene(new Scene(layout, 250, 250));
+        modal.showAndWait();
+    }
+
+    private void registrarMovimientoInDB(int id, String tipo, int cantidad) {
+        try (Connection conn = ConexionDB.getInstance()) {
+            PreparedStatement ps = conn.prepareStatement("INSERT INTO movimientos (id_medicamento, tipo, cantidad) VALUES (?, ?, ?)");
+            ps.setInt(1, id);
+            ps.setString(2, tipo);
+            ps.setInt(3, cantidad);
+            ps.executeUpdate();
+        } catch (Exception e) { e.printStackTrace(); }
+    }
+
+    // --- CONSULTA SQL CON FILTRO Y SUMA SEMANAL ---
     private ObservableList<ObservableList<Object>> getFiltrosFromDB() {
         ObservableList<ObservableList<Object>> data = FXCollections.observableArrayList();
-        // Usamos ILIKE para que no importe mayúsculas/minúsculas
+        // Nota: Cambié ILIKE por LIKE para compatibilidad estándar, 
+        // y agregué la lógica de suma por semana y filtro por nombre "Filtro"
         String sql = """
-            SELECT id_medicamento, nombre, descripcion, stock 
-            FROM medicamentos 
-            WHERE nombre ILIKE '%Filtro%' 
-            ORDER BY nombre
+            SELECT 
+                m.id_medicamento, m.nombre, m.descripcion, m.stock_inicial,
+                COALESCE(SUM(CASE WHEN mov.tipo = 'ENTRADA' THEN mov.cantidad ELSE 0 END), 0) AS entradas,
+                COALESCE(SUM(CASE WHEN mov.tipo = 'SALIDA' THEN mov.cantidad ELSE 0 END), 0) AS salidas
+            FROM medicamentos m
+            LEFT JOIN movimientos mov ON m.id_medicamento = mov.id_medicamento 
+                 AND mov.fecha >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
+            WHERE m.nombre LIKE '%Filtro%'
+            GROUP BY m.id_medicamento
+            ORDER BY m.nombre
         """;
 
         try (Connection conn = ConexionDB.getInstance();
@@ -136,81 +161,39 @@ public class FiltrosView {
 
             int i = 1;
             while (rs.next()) {
-                int stock = rs.getInt("stock");
+                int inicial = rs.getInt("stock_inicial");
+                int ent = rs.getInt("entradas");
+                int sal = rs.getInt("salidas");
+                int stockFinal = inicial + ent - sal;
+
                 data.add(FXCollections.observableArrayList(
-                        rs.getInt("id_medicamento"),
-                        i++,
-                        rs.getString("nombre"),
-                        rs.getString("descripcion"),
-                        stock,
-                        0,
-                        0,
-                        stock
+                    rs.getInt("id_medicamento"), i++, rs.getString("nombre"),
+                    rs.getString("descripcion"), inicial, ent, sal, stockFinal
                 ));
             }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        } catch (Exception e) { e.printStackTrace(); }
         return data;
-    }
-
-    // Reutilizamos tu lógica de edición para mantener consistencia
-    private void abrirVentanaEditar(ObservableList<Object> row) {
-        Stage modal = new Stage();
-        modal.initModality(Modality.APPLICATION_MODAL);
-        modal.setTitle("Editar Filtro");
-
-        VBox layout = new VBox(15);
-        layout.setPadding(new Insets(20));
-        layout.setStyle("-fx-background-color:#111827;");
-
-        TextField txtNombre = new TextField(row.get(2).toString());
-        TextField txtDescripcion = new TextField(row.get(3).toString());
-        TextField txtStock = new TextField(row.get(4).toString());
-
-        Button btnGuardar = new Button("Guardar");
-        btnGuardar.setStyle("-fx-background-color:#2563eb; -fx-text-fill:white;");
-
-        btnGuardar.setOnAction(e -> {
-            try {
-                Connection conn = ConexionDB.getInstance();
-                String sql = "UPDATE medicamentos SET nombre=?, descripcion=?, stock=? WHERE id_medicamento=?";
-                PreparedStatement ps = conn.prepareStatement(sql);
-                ps.setString(1, txtNombre.getText());
-                ps.setString(2, txtDescripcion.getText());
-                ps.setInt(3, Integer.parseInt(txtStock.getText()));
-                ps.setInt(4, Integer.parseInt(row.get(0).toString()));
-                ps.executeUpdate();
-
-                modal.close();
-                table.setItems(getFiltrosFromDB());
-            } catch (Exception ex) { ex.printStackTrace(); }
-        });
-
-        layout.getChildren().addAll(new Label("Nombre"), txtNombre, new Label("Descripción"), txtDescripcion, new Label("Stock"), txtStock, btnGuardar);
-        modal.setScene(new Scene(layout, 350, 350));
-        modal.showAndWait();
     }
 
     private void confirmarEliminacion(int id) {
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, "¿Eliminar este filtro?", ButtonType.OK, ButtonType.CANCEL);
         confirm.showAndWait().ifPresent(response -> {
             if (response == ButtonType.OK) {
-                try {
-                    Connection conn = ConexionDB.getInstance();
+                try (Connection conn = ConexionDB.getInstance()) {
                     PreparedStatement ps = conn.prepareStatement("DELETE FROM medicamentos WHERE id_medicamento=?");
                     ps.setInt(1, id);
                     ps.executeUpdate();
-                    table.setItems(getFiltrosFromDB());
+                    actualizarTabla();
                 } catch (Exception e) { e.printStackTrace(); }
             }
         });
     }
 
-    private TableColumn<ObservableList<Object>, Object> createColumn(String title, int index, Pos alignment) {
+    private TableColumn<ObservableList<Object>, Object> createColumn(String title, int index, Pos alignment, boolean visible) {
         TableColumn<ObservableList<Object>, Object> col = new TableColumn<>(title);
         col.setCellValueFactory(data -> new javafx.beans.property.SimpleObjectProperty<>(data.getValue().get(index)));
         col.setStyle("-fx-alignment: " + alignment.name().replace("_", "-") + ";");
+        col.setVisible(visible);
         return col;
     }
 

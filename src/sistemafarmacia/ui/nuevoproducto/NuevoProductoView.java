@@ -24,7 +24,6 @@ public class NuevoProductoView {
     private TextField txtNombre, txtPrecio, txtStock;
     private TextArea txtDescripcion;
     private ComboBox<String> comboCategoria;
-    private DatePicker dateVencimiento;
 
     public NuevoProductoView(Runnable actionVolver) {
         this.actionVolver = actionVolver;
@@ -35,21 +34,28 @@ public class NuevoProductoView {
         root = new BorderPane();
         root.setStyle("-fx-background-color: #0f172a;");
 
+        // --- CONTENEDOR PRINCIPAL CON SCROLL ---
+        ScrollPane scrollPane = new ScrollPane();
+        scrollPane.setFitToWidth(true); // Se ajusta al ancho de la ventana
+        scrollPane.setStyle("-fx-background: #0f172a; -fx-background-color: transparent; -fx-border-color: transparent;");
+        
         VBox content = new VBox(30);
         content.setPadding(new Insets(40));
+        content.setAlignment(Pos.TOP_CENTER); // Centrar contenido horizontalmente
 
         // Título
         Label titulo = new Label("Registrar Nuevo Producto");
         titulo.setFont(Font.font("System Bold", 32));
         titulo.setTextFill(Color.WHITE);
 
-        // Inicializar campos con tamaño mayor
+        // Inicializar campos
         txtNombre = crearTextField("Nombre del Medicamento", 400, 30);
 
         txtDescripcion = new TextArea();
         txtDescripcion.setPromptText("Descripción detallada...");
-        txtDescripcion.setPrefHeight(150);
+        txtDescripcion.setPrefHeight(120);
         txtDescripcion.setMaxWidth(400);
+        txtDescripcion.setWrapText(true);
         txtDescripcion.setStyle(
             "-fx-control-inner-background: #1e293b; " +
             "-fx-text-fill: white; " +
@@ -61,6 +67,7 @@ public class NuevoProductoView {
 
         comboCategoria = new ComboBox<>();
         comboCategoria.setPromptText("Seleccione Categoría");
+        comboCategoria.setPrefWidth(400);
         comboCategoria.setMaxWidth(400);
         comboCategoria.setStyle("-fx-background-color: #1e293b; -fx-text-fill: white; -fx-font-size: 14;");
         cargarCategorias();
@@ -68,41 +75,27 @@ public class NuevoProductoView {
         txtPrecio = crearTextField("Precio (ej: 10.50)", 400, 30);
         txtStock = crearTextField("Cantidad inicial", 400, 30);
 
-        dateVencimiento = new DatePicker();
-        dateVencimiento.setMaxWidth(400);
-        dateVencimiento.setStyle("-fx-control-inner-background: #1e293b; -fx-font-size: 14;");
-
         // Formulario en Grid
         GridPane grid = new GridPane();
-        grid.setVgap(20);
+        grid.setVgap(15);
         grid.setHgap(20);
         grid.setAlignment(Pos.CENTER);
 
         int row = 0;
-
         grid.add(crearLabel("Nombre:"), 0, row++);
         grid.add(txtNombre, 0, row++);
-        GridPane.setHalignment(txtNombre, HPos.CENTER);
-
+        
         grid.add(crearLabel("Descripción:"), 0, row++);
         grid.add(txtDescripcion, 0, row++);
-        GridPane.setHalignment(txtDescripcion, HPos.CENTER);
 
         grid.add(crearLabel("Categoría:"), 0, row++);
         grid.add(comboCategoria, 0, row++);
-        GridPane.setHalignment(comboCategoria, HPos.CENTER);
 
         grid.add(crearLabel("Precio:"), 0, row++);
         grid.add(txtPrecio, 0, row++);
-        GridPane.setHalignment(txtPrecio, HPos.CENTER);
 
         grid.add(crearLabel("Stock:"), 0, row++);
         grid.add(txtStock, 0, row++);
-        GridPane.setHalignment(txtStock, HPos.CENTER);
-
-        grid.add(crearLabel("Fecha de Vencimiento:"), 0, row++);
-        grid.add(dateVencimiento, 0, row++);
-        GridPane.setHalignment(dateVencimiento, HPos.CENTER);
 
         // Botones
         Button btnGuardar = new Button("Confirmar Registro");
@@ -117,10 +110,15 @@ public class NuevoProductoView {
         });
 
         HBox botones = new HBox(20, btnGuardar, btnCancelar);
-        botones.setAlignment(Pos.CENTER_RIGHT);
+        botones.setAlignment(Pos.CENTER);
+        botones.setPadding(new Insets(20, 0, 0, 0));
 
+        // Unir todo en el VBox
         content.getChildren().addAll(titulo, grid, botones);
-        root.setCenter(content);
+        
+        // Asignar el contenido al ScrollPane
+        scrollPane.setContent(content);
+        root.setCenter(scrollPane);
     }
 
     public BorderPane getRoot() {
@@ -139,7 +137,7 @@ public class NuevoProductoView {
 
     private boolean validarCampos() {
         if (txtNombre.getText().isEmpty() || comboCategoria.getValue() == null ||
-            txtPrecio.getText().isEmpty() || txtStock.getText().isEmpty() || dateVencimiento.getValue() == null) {
+            txtPrecio.getText().isEmpty() || txtStock.getText().isEmpty()) {
             new Alert(Alert.AlertType.WARNING, "Por favor complete todos los campos").show();
             return false;
         }
@@ -155,6 +153,7 @@ public class NuevoProductoView {
 
     private boolean guardarEnBD() {
         try (Connection conn = ConexionDB.getInstance()) {
+            // Obtener ID de categoría
             String sqlCat = "SELECT id_categoria FROM categorias WHERE nombre = ?";
             PreparedStatement psCat = conn.prepareStatement(sqlCat);
             psCat.setString(1, comboCategoria.getValue());
@@ -162,14 +161,14 @@ public class NuevoProductoView {
 
             int idCat = rs.next() ? rs.getInt("id_categoria") : 0;
 
-            String sql = "INSERT INTO medicamentos (nombre, descripcion, id_categoria, precio, stock, fecha_vencimiento) VALUES (?, ?, ?, ?, ?, ?)";
+            // Insertar producto (sin fecha_vencimiento)
+            String sql = "INSERT INTO medicamentos (nombre, descripcion, id_categoria, precio, stock) VALUES (?, ?, ?, ?, ?)";
             PreparedStatement ps = conn.prepareStatement(sql);
             ps.setString(1, txtNombre.getText());
             ps.setString(2, txtDescripcion.getText());
             ps.setInt(3, idCat);
             ps.setDouble(4, Double.parseDouble(txtPrecio.getText()));
             ps.setInt(5, Integer.parseInt(txtStock.getText()));
-            ps.setDate(6, java.sql.Date.valueOf(dateVencimiento.getValue()));
 
             ps.executeUpdate();
             return true;
