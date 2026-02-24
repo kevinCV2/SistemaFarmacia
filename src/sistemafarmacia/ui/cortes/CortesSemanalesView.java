@@ -2,25 +2,36 @@ package sistemafarmacia.ui.cortes;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.print.*;
+import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
-import javafx.util.Callback;
+import javafx.scene.text.FontWeight;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 import sistemafarmacia.utils.UIComponents;
 import sistemafarmacia.utils.ConexionDB;
+
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
-
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.TextStyle;
+import java.util.Locale;
 
 public class CortesSemanalesView {
 
     private BorderPane root;
     private TableView<CorteRenglon> tablaCortes;
     private Runnable actionVolver;
+    private DatePicker dateDesde, dateHasta;
+    private Label lblContadorCortes;
+    private int cortesRealizados = 0;
 
     public CortesSemanalesView(Runnable actionVolver) {
         this.actionVolver = actionVolver;
@@ -31,44 +42,44 @@ public class CortesSemanalesView {
         VBox content = new VBox(20);
         content.setPadding(new Insets(20));
 
+        // --- TOP BAR ---
         HBox topBar = new HBox(25);
         topBar.setAlignment(Pos.CENTER_LEFT);
 
         Button btnVolver = new Button("⬅ Volver");
-        btnVolver.setStyle("-fx-background-color: transparent; -fx-text-fill: #9ca3af; -fx-font-size: 14px; -fx-cursor: hand; -fx-border-color: #374151; -fx-border-radius: 5; -fx-border-width: 1;");
-        btnVolver.setOnMouseEntered(e -> btnVolver.setStyle("-fx-background-color: #374151; -fx-text-fill: white; -fx-font-size: 14px; -fx-cursor: hand; -fx-border-color: #374151; -fx-border-radius: 5; -fx-border-width: 1;"));
-        btnVolver.setOnMouseExited(e -> btnVolver.setStyle("-fx-background-color: transparent; -fx-text-fill: #9ca3af; -fx-font-size: 14px; -fx-cursor: hand; -fx-border-color: #374151; -fx-border-radius: 5; -fx-border-width: 1;"));
-
-        btnVolver.setOnAction(e -> {
-            if (this.actionVolver != null) this.actionVolver.run();
-        });
+        btnVolver.setStyle("-fx-background-color: transparent; -fx-text-fill: #9ca3af; -fx-font-size: 14px; -fx-cursor: hand; -fx-border-color: #374151; -fx-border-radius: 5;");
+        btnVolver.setOnAction(e -> { if (this.actionVolver != null) this.actionVolver.run(); });
 
         VBox headerText = new VBox(5);
         Label title = new Label("Almacén Digital");
         title.setFont(Font.font("System Bold", 28));
         title.setTextFill(Color.WHITE);
-
         Label subtitle = new Label("Control de Insumos y Movimientos");
         subtitle.setTextFill(Color.web("#9ca3af"));
-        subtitle.setFont(Font.font(14));
         headerText.getChildren().addAll(title, subtitle);
-
         topBar.getChildren().addAll(btnVolver, headerText);
 
+        // --- STATS PANEL ---
         HBox statsPanel = new HBox(20);
-        Region cardVentas = UIComponents.statCard("Ventas Semanales", "$0.00", "/sistemafarmacia/assets/icons/Ventas2.png");
-        Region cardCortes = UIComponents.statCard("Cortes Generados", "0", "/sistemafarmacia/assets/icons/Cortes semanales.png");
+        Region cardVentas = UIComponents.statCard("Ventas Semanales", "$12,450.00", "/sistemafarmacia/assets/icons/Ventas2.png");
+        VBox cardCortes = (VBox) UIComponents.statCard("Cortes Generados", "0", "/sistemafarmacia/assets/icons/Cortes semanales.png");
+        lblContadorCortes = (Label) cardCortes.lookup(".label");
+
         HBox.setHgrow(cardVentas, Priority.ALWAYS);
         HBox.setHgrow(cardCortes, Priority.ALWAYS);
         statsPanel.getChildren().addAll(cardVentas, cardCortes);
 
+        // --- TOOLBAR ---
         HBox toolbar = createToolbar();
-        tablaCortes = createTable();
 
+        // --- TABLE ---
+        tablaCortes = createTable();
         VBox.setVgrow(tablaCortes, Priority.ALWAYS);
 
         content.getChildren().addAll(topBar, statsPanel, toolbar, tablaCortes);
         root.setCenter(content);
+
+        cargarDatosDesdeBD();
     }
 
     private HBox createToolbar() {
@@ -76,196 +87,174 @@ public class CortesSemanalesView {
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.setStyle("-fx-background-color: #111827; -fx-padding: 15; -fx-background-radius: 10;");
 
-        Label lblDesde = new Label("Desde:"); lblDesde.setTextFill(Color.WHITE);
-        DatePicker dateDesde = new DatePicker(LocalDate.now().minusDays(7));
-        Label lblHasta = new Label("Hasta:"); lblHasta.setTextFill(Color.WHITE);
-        DatePicker dateHasta = new DatePicker(LocalDate.now());
-        Region spacer = new Region(); HBox.setHgrow(spacer, Priority.ALWAYS);
-        Button btnGenerar = new Button("Generar Corte Nuevo");
-        btnGenerar.setStyle("-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold;");
+        Label l1 = new Label("Desde:"); l1.setTextFill(Color.WHITE);
+        dateDesde = new DatePicker(LocalDate.now().minusDays(7));
+        Label l2 = new Label("Hasta:"); l2.setTextFill(Color.WHITE);
+        dateHasta = new DatePicker(LocalDate.now());
 
-        toolbar.getChildren().addAll(lblDesde, dateDesde, lblHasta, dateHasta, spacer, btnGenerar);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        Button btnGenerar = new Button("Generar Corte Nuevo");
+        btnGenerar.setStyle("-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;");
+        btnGenerar.setOnAction(e -> imprimirSinPerdida());
+
+        toolbar.getChildren().addAll(l1, dateDesde, l2, dateHasta, spacer, btnGenerar);
         return toolbar;
+    }
+
+    private void imprimirSinPerdida() {
+        PrinterJob job = PrinterJob.createPrinterJob();
+        if (job == null) return;
+
+        Stage stage = (Stage) root.getScene().getWindow();
+        if (!job.showPrintDialog(stage)) return;
+
+        PageLayout layout = job.getJobSettings().getPageLayout();
+        double printableWidth = layout.getPrintableWidth();
+        double printableHeight = layout.getPrintableHeight();
+
+        // Tabla espejo
+        TableView<CorteRenglon> tablaFull = createTable();
+        tablaFull.getItems().addAll(tablaCortes.getItems());
+
+        double rowHeight = 32.0;
+        double contentAreaHeight = printableHeight - 180;
+
+        // Escala horizontal si es necesario
+        double scaleX = printableWidth / tablaFull.getWidth();
+        tablaFull.setScaleX(scaleX);
+        tablaFull.setScaleY(scaleX);
+
+        int rowsPerPage = (int) (contentAreaHeight / rowHeight);
+
+        // Fechas de la semana
+        LocalDate desde = dateDesde.getValue();
+        LocalDate hasta = dateHasta.getValue();
+        String fechaRango = String.format("%d-%d %s %d",
+                desde.getDayOfMonth(),
+                hasta.getDayOfMonth(),
+                desde.getMonth().getDisplayName(TextStyle.FULL, new Locale("es")),
+                desde.getYear());
+
+        int pageNum = 1;
+        boolean exito = false;
+
+        for (int start = 0; start < tablaFull.getItems().size(); start += rowsPerPage) {
+            int end = Math.min(start + rowsPerPage, tablaFull.getItems().size());
+
+            TableView<CorteRenglon> pageTable = createTable();
+            pageTable.getItems().addAll(tablaFull.getItems().subList(start, end));
+            pageTable.setPrefWidth(printableWidth);
+            pageTable.setPrefHeight(contentAreaHeight);
+
+            VBox page = new VBox(10);
+            page.setPadding(new Insets(20));
+            page.setStyle("-fx-background-color: white;");
+
+            // Encabezado
+            HBox header = new HBox(10);
+            header.setAlignment(Pos.CENTER_LEFT);
+            ImageView logo = new ImageView("/sistemafarmacia/assets/icons/logo.png");
+            logo.setFitWidth(80); logo.setFitHeight(40);
+
+            VBox headerText = new VBox(2);
+            Label title = new Label("CORTE DE INVENTARIO");
+            title.setFont(Font.font("Arial", FontWeight.BOLD, 16));
+            Label info = new Label("Semana: " + fechaRango + " | Hora: " + LocalTime.now().withNano(0));
+            info.setFont(Font.font("Arial", 12));
+
+            headerText.getChildren().addAll(title, info);
+            header.getChildren().addAll(logo, headerText);
+
+            page.getChildren().addAll(header, new Separator(), pageTable);
+
+            if (!job.printPage(page)) break;
+            exito = true;
+            pageNum++;
+        }
+
+        if (exito) {
+            job.endJob();
+            cortesRealizados++;
+            if (lblContadorCortes != null) lblContadorCortes.setText(String.valueOf(cortesRealizados));
+            mostrarAlertaConfirmacion();
+        }
+    }
+
+    private void mostrarAlertaConfirmacion() {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Operación Exitosa");
+        alert.setHeaderText(null);
+        alert.setContentText("El reporte de inventario se ha generado correctamente.");
+
+        Stage stage = (Stage) alert.getDialogPane().getScene().getWindow();
+        stage.setAlwaysOnTop(true);
+        alert.initModality(Modality.APPLICATION_MODAL);
+        alert.showAndWait();
+    }
+
+    private void cargarDatosDesdeBD() {
+        try (Connection conn = ConexionDB.getInstance()) {
+            String sql = "SELECT c.nombre AS cat, m.nombre AS med, m.stock FROM categorias c JOIN medicamentos m ON m.id_categoria = c.id_categoria ORDER BY c.id_categoria, m.nombre;";
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(sql);
+            String catActual = "";
+            int n = 1;
+            while (rs.next()) {
+                String cat = rs.getString("cat");
+                if (!cat.equals(catActual)) {
+                    tablaCortes.getItems().add(new CorteRenglon(cat));
+                    catActual = cat;
+                    n = 1;
+                }
+                tablaCortes.getItems().add(new CorteRenglon(String.valueOf(n++), "PZA", rs.getString("med"), rs.getString("stock"), "0", "0", rs.getString("stock")));
+            }
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
     private TableView<CorteRenglon> createTable() {
         TableView<CorteRenglon> table = new TableView<>();
-
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        table.setStyle("-fx-base: #1f2933; -fx-control-inner-background: #111827;");
 
-        table.setStyle("-fx-base: #1f2933; -fx-control-inner-background: #111827; -fx-background-color: #111827;");
+        TableColumn<CorteRenglon, String> c1 = new TableColumn<>("No.");
+        c1.setCellValueFactory(new PropertyValueFactory<>("numero"));
+        TableColumn<CorteRenglon, String> c2 = new TableColumn<>("Descripción");
+        c2.setCellValueFactory(new PropertyValueFactory<>("descripcion"));
+        TableColumn<CorteRenglon, String> c3 = new TableColumn<>("Stock");
+        c3.setCellValueFactory(new PropertyValueFactory<>("existencia"));
+        TableColumn<CorteRenglon, String> c4 = new TableColumn<>("Ent.");
+        c4.setCellValueFactory(new PropertyValueFactory<>("entrada"));
+        TableColumn<CorteRenglon, String> c5 = new TableColumn<>("Sal.");
+        c5.setCellValueFactory(new PropertyValueFactory<>("salida"));
+        TableColumn<CorteRenglon, String> c6 = new TableColumn<>("Total");
+        c6.setCellValueFactory(new PropertyValueFactory<>("inventarioFinal"));
+
+        table.getColumns().addAll(c1, c2, c3, c4, c5, c6);
 
         table.setRowFactory(tv -> new TableRow<>() {
-            @Override
-            protected void updateItem(CorteRenglon item, boolean empty) {
+            @Override protected void updateItem(CorteRenglon item, boolean empty) {
                 super.updateItem(item, empty);
-                if (item == null || empty) {
-                    setStyle("");
-                } else if (item.isEsSeccion()) {
-                    setStyle("-fx-background-color: #1e3a8a; -fx-font-weight: bold;");
-                } else {
-                    setStyle("");
-                }
+                if (item != null && item.isEsSeccion()) setStyle("-fx-background-color: #1e3a8a; -fx-font-weight: bold;");
+                else setStyle("");
             }
         });
-
-
-        TableColumn<CorteRenglon, String> colNumero = new TableColumn<>("No.");
-        colNumero.setCellValueFactory(new PropertyValueFactory<>("numero"));
-        colNumero.setMaxWidth(800);
-        colNumero.setStyle("-fx-alignment: CENTER;");
-
-        TableColumn<CorteRenglon, String> colPresentacion = new TableColumn<>("Presentación");
-        colPresentacion.setCellValueFactory(new PropertyValueFactory<>("presentacion"));
-        colPresentacion.setMaxWidth(2000);
-        colPresentacion.setStyle("-fx-alignment: CENTER-LEFT;");
-
-        TableColumn<CorteRenglon, String> colDescripcion = new TableColumn<>("Descripción");
-        colDescripcion.setCellValueFactory(new PropertyValueFactory<>("descripcion"));
-        colDescripcion.setMaxWidth(10000);
-
-        colDescripcion.setCellFactory(new Callback<>() {
-            @Override
-            public TableCell<CorteRenglon, String> call(TableColumn<CorteRenglon, String> param) {
-                return new TableCell<>() {
-                    @Override
-                    protected void updateItem(String item, boolean empty) {
-                        super.updateItem(item, empty);
-                        if (!empty && item != null) {
-                            setText(item);
-                            TableRow<?> row = getTableRow();
-                            if (row != null && row.getItem() != null) {
-                                CorteRenglon datos = (CorteRenglon) row.getItem();
-                                if (datos.isEsSeccion()) {
-                                    setStyle("-fx-alignment: CENTER; -fx-text-fill: #93c5fd;");
-                                } else {
-                                    setStyle("-fx-alignment: CENTER-LEFT; -fx-text-fill: white;");
-                                }
-                            }
-                        } else {
-                            setText(null); setStyle("");
-                        }
-                    }
-                };
-            }
-        });
-
-        TableColumn<CorteRenglon, String> colExistencia = new TableColumn<>("Existencia");
-        colExistencia.setCellValueFactory(new PropertyValueFactory<>("existencia"));
-        colExistencia.setMaxWidth(1000); // Peso pequeño
-        colExistencia.setStyle("-fx-alignment: CENTER;");
-
-        TableColumn<CorteRenglon, String> colEntrada = new TableColumn<>("Entrada");
-        colEntrada.setCellValueFactory(new PropertyValueFactory<>("entrada"));
-        colEntrada.setMaxWidth(1000);
-        colEntrada.setStyle("-fx-alignment: CENTER; -fx-text-fill: #4ade80;");
-
-        TableColumn<CorteRenglon, String> colSalida = new TableColumn<>("Salida");
-        colSalida.setCellValueFactory(new PropertyValueFactory<>("salida"));
-        colSalida.setMaxWidth(1000);
-        colSalida.setStyle("-fx-alignment: CENTER; -fx-text-fill: #f87171;");
-
-        TableColumn<CorteRenglon, String> colInvFinal = new TableColumn<>("Inv. Final");
-        colInvFinal.setCellValueFactory(new PropertyValueFactory<>("inventarioFinal"));
-        colInvFinal.setMaxWidth(1200);
-        colInvFinal.setStyle("-fx-alignment: CENTER; -fx-font-weight: bold;");
-
-        table.getColumns().addAll(colNumero, colPresentacion, colDescripcion,
-                colExistencia, colEntrada, colSalida, colInvFinal);
-
-        
-        try {
-            Connection conn = ConexionDB.getInstance();
-
-            String sql = """
-                SELECT 
-                    c.nombre AS categoria,
-                    m.nombre AS medicamento,
-                    m.stock AS existencia,
-                    COALESCE(SUM(CASE WHEN mi.tipo = 'ENTRADA' THEN mi.cantidad END),0) AS entrada,
-                    COALESCE(SUM(CASE WHEN mi.tipo = 'SALIDA' THEN mi.cantidad END),0) AS salida,
-                    (m.stock 
-                     + COALESCE(SUM(CASE WHEN mi.tipo = 'ENTRADA' THEN mi.cantidad END),0)
-                     - COALESCE(SUM(CASE WHEN mi.tipo = 'SALIDA' THEN mi.cantidad END),0)
-                    ) AS inventario_final
-                FROM categorias c
-                JOIN medicamentos m ON m.id_categoria = c.id_categoria
-                LEFT JOIN movimientos_inventario mi ON mi.id_medicamento = m.id_medicamento
-                GROUP BY c.nombre, m.nombre, m.stock, c.id_categoria
-                ORDER BY c.id_categoria, m.nombre;
-            """;
-
-            Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery(sql);
-
-            String categoriaActual = "";
-
-            int contador = 1;
-
-            while (rs.next()) {
-
-                String categoria = rs.getString("categoria");
-
-                // Crear sección
-                if (!categoria.equals(categoriaActual)) {
-
-                    table.getItems().add(
-                        new CorteRenglon(categoria)
-                    );
-
-                    categoriaActual = categoria;
-                    contador = 1;
-                }
-
-                table.getItems().add(
-                    new CorteRenglon(
-                        String.valueOf(contador),
-                        "PZA",
-                        rs.getString("medicamento"),
-                        rs.getString("existencia"),
-                        rs.getString("entrada"),
-                        rs.getString("salida"),
-                        rs.getString("inventario_final")
-                    )
-                );
-
-                contador++;
-            }
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
 
         return table;
     }
 
-    public BorderPane getRoot() {
-        return root;
-    }
+    public BorderPane getRoot() { return root; }
 
     public static class CorteRenglon {
-        public String numero;
-        public String presentacion;
-        public String descripcion;
-        public String existencia;
-        public String entrada;
-        public String salida;
-        public String inventarioFinal;
-        public boolean esSeccion;
-
+        private String numero, presentacion, descripcion, existencia, entrada, salida, inventarioFinal;
+        private boolean esSeccion;
         public CorteRenglon(String n, String p, String d, String e, String en, String s, String f) {
             this.numero = n; this.presentacion = p; this.descripcion = d;
             this.existencia = e; this.entrada = en; this.salida = s; this.inventarioFinal = f;
             this.esSeccion = false;
         }
-
-        public CorteRenglon(String nombreSeccion) {
-            this.descripcion = nombreSeccion;
-            this.numero = ""; this.presentacion = ""; this.existencia = "";
-            this.entrada = ""; this.salida = ""; this.inventarioFinal = "";
-            this.esSeccion = true;
-        }
-
+        public CorteRenglon(String s) { this.descripcion = s; this.esSeccion = true; }
         public String getNumero() { return numero; }
         public String getPresentacion() { return presentacion; }
         public String getDescripcion() { return descripcion; }
