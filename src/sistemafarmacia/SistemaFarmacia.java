@@ -8,6 +8,7 @@ import javafx.stage.StageStyle;
 import sistemafarmacia.ui.DashboardView;
 import sistemafarmacia.utils.ConexionDB;
 
+
 public class SistemaFarmacia extends Application {
 
     @Override

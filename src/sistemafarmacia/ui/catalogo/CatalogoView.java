@@ -14,6 +14,7 @@ import javafx.stage.Stage;
 import sistemafarmacia.utils.ConexionDB;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 
@@ -31,8 +32,6 @@ public class CatalogoView {
 
         VBox content = new VBox(20);
         content.setPadding(new Insets(20));
-
-        /* ================= TOP BAR ================= */
 
         HBox topBar = new HBox(25);
         topBar.setAlignment(Pos.CENTER_LEFT);
@@ -61,8 +60,6 @@ public class CatalogoView {
         headerText.getChildren().addAll(title, subtitle);
         topBar.getChildren().addAll(btnVolver, headerText);
 
-        /* ================= TABLA ================= */
-
         table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         table.setStyle("""
@@ -71,64 +68,57 @@ public class CatalogoView {
             -fx-background-color: #111827;
         """);
 
-        table.getColumns().add(createColumn("No.", 0, Pos.CENTER));
-        table.getColumns().add(createColumn("Presentación", 1, Pos.CENTER_LEFT));
-        table.getColumns().add(createColumn("Descripción", 2, Pos.CENTER_LEFT));
+        TableColumn<ObservableList<Object>, Object> idCol =
+                createColumn("ID", 0, Pos.CENTER);
+        idCol.setVisible(false);
 
-        TableColumn<ObservableList<Object>, Object> existenciaCol =
-                createColumn("Existencia", 3, Pos.CENTER);
+        table.getColumns().add(idCol);
+        table.getColumns().add(createColumn("No.", 1, Pos.CENTER));
+        table.getColumns().add(createColumn("Presentación", 2, Pos.CENTER_LEFT));
+        table.getColumns().add(createColumn("Descripción", 3, Pos.CENTER_LEFT));
+        table.getColumns().add(createColumn("Existencia", 4, Pos.CENTER));
+        table.getColumns().add(createColumn("Entrada", 5, Pos.CENTER));
+        table.getColumns().add(createColumn("Salidas", 6, Pos.CENTER));
+        table.getColumns().add(createColumn("Inventario Final", 7, Pos.CENTER));
 
-        existenciaCol.setCellFactory(col -> new TableCell<>() {
-            @Override
-            protected void updateItem(Object item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                    setStyle("");
-                } else {
-                    int stock = Integer.parseInt(item.toString());
-                    setText(item.toString());
-                    setStyle(stock <= 10
-                            ? "-fx-text-fill: #f87171; -fx-font-weight: bold;"
-                            : "-fx-text-fill: #4ade80;");
-                }
-            }
-        });
-
-        table.getColumns().add(existenciaCol);
-        table.getColumns().add(createColumn("Entrada", 4, Pos.CENTER));
-        table.getColumns().add(createColumn("Salidas", 5, Pos.CENTER));
-        table.getColumns().add(createColumn("Inventario Final", 6, Pos.CENTER));
-
-        /* ================= ACCIONES ================= */
-
-        TableColumn<ObservableList<Object>, Void> accionesCol = new TableColumn<>("Acciones");
+        // ACCIONES
+        TableColumn<ObservableList<Object>, Void> accionesCol =
+                new TableColumn<>("Acciones");
 
         accionesCol.setCellFactory(col -> new TableCell<>() {
 
             private final Button btnEdit = new Button("✏️");
-            private final Button btnDelete = new Button("🗑️");
+            private final Button btnDelete = new Button("🗑");
             private final HBox box = new HBox(8, btnEdit, btnDelete);
 
             {
                 box.setAlignment(Pos.CENTER);
 
-                btnEdit.setStyle("""
-                    -fx-background-color: #2563eb;
-                    -fx-text-fill: white;
-                    -fx-cursor: hand;
-                """);
-
-                btnDelete.setStyle("""
-                    -fx-background-color: #dc2626;
-                    -fx-text-fill: white;
-                    -fx-cursor: hand;
-                """);
+                btnEdit.setStyle("-fx-background-color:#2563eb; -fx-text-fill:white;");
+                btnDelete.setStyle("-fx-background-color:#dc2626; -fx-text-fill:white;");
 
                 btnEdit.setOnAction(e -> {
                     ObservableList<Object> row =
                             getTableView().getItems().get(getIndex());
                     abrirVentanaEditar(row);
+                });
+
+                btnDelete.setOnAction(e -> {
+                    ObservableList<Object> row =
+                            getTableView().getItems().get(getIndex());
+
+                    int idMedicamento = Integer.parseInt(row.get(0).toString());
+
+                    Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+                    confirm.setTitle("Confirmar eliminación");
+                    confirm.setHeaderText("¿Eliminar medicamento?");
+                    confirm.setContentText("Esta acción no se puede deshacer.");
+
+                    confirm.showAndWait().ifPresent(response -> {
+                        if (response == ButtonType.OK) {
+                            eliminarMedicamento(idMedicamento);
+                        }
+                    });
                 });
             }
 
@@ -148,130 +138,94 @@ public class CatalogoView {
         table.setItems(getDataFromDB());
     }
 
-    /* ================= VENTANA EDITAR ================= */
-
+    // ===== METODO EDITAR =====
     private void abrirVentanaEditar(ObservableList<Object> row) {
 
         Stage modal = new Stage();
         modal.initModality(Modality.APPLICATION_MODAL);
         modal.setTitle("Editar Medicamento");
 
-        VBox rootModal = new VBox(15);
-        rootModal.setPadding(new Insets(20));
-        rootModal.setStyle("-fx-background-color: #111827;");
+        VBox layout = new VBox(15);
+        layout.setPadding(new Insets(20));
+        layout.setStyle("-fx-background-color:#111827;");
 
-        Label title = new Label("Modificar Medicamento");
-        title.setTextFill(Color.WHITE);
-        title.setFont(Font.font(18));
+        TextField txtNombre = new TextField(row.get(2).toString());
+        TextField txtDescripcion = new TextField(row.get(3).toString());
+        TextField txtStock = new TextField(row.get(4).toString());
 
-        TextField txtNombre = crearInput(row.get(1).toString());
-        TextField txtDescripcion = crearInput(row.get(2).toString());
-
-        int stockActual = Integer.parseInt(row.get(3).toString());
-
-        TextField txtStockActual = crearInput(String.valueOf(stockActual));
-        txtStockActual.setDisable(true);
-
-        TextField txtEntrada = crearInput("0");
-
-        Button btnGuardar = new Button("Guardar Cambios");
-        btnGuardar.setStyle("""
-            -fx-background-color: #2563eb;
-            -fx-text-fill: white;
-            -fx-font-weight: bold;
-        """);
-
-        Button btnCancelar = new Button("Cancelar");
-        btnCancelar.setStyle("""
-            -fx-background-color: #374151;
-            -fx-text-fill: white;
-        """);
-
-        btnCancelar.setOnAction(e -> modal.close());
+        Button btnGuardar = new Button("Guardar");
+        btnGuardar.setStyle("-fx-background-color:#2563eb; -fx-text-fill:white;");
 
         btnGuardar.setOnAction(e -> {
             try {
-                int entrada = Integer.parseInt(txtEntrada.getText());
-                if (entrada < 0) throw new NumberFormatException();
-
-                int nuevoStock = stockActual + entrada;
+                int id = Integer.parseInt(row.get(0).toString());
 
                 Connection conn = ConexionDB.getInstance();
-                Statement stmt = conn.createStatement();
-
-                stmt.executeUpdate("""
+                String sql = """
                     UPDATE medicamentos
-                    SET nombre = '%s',
-                        stock = %d
-                    WHERE nombre = '%s'
-                """.formatted(
-                        txtNombre.getText(),
-                        nuevoStock,
-                        row.get(1).toString()
-                ));
+                    SET nombre=?, descripcion=?, stock=?
+                    WHERE id_medicamento=?
+                """;
 
-                row.set(1, txtNombre.getText());
-                row.set(2, txtDescripcion.getText());
-                row.set(3, nuevoStock);
-                row.set(4, entrada);
-                row.set(6, nuevoStock);
+                PreparedStatement ps = conn.prepareStatement(sql);
+                ps.setString(1, txtNombre.getText());
+                ps.setString(2, txtDescripcion.getText());
+                ps.setInt(3, Integer.parseInt(txtStock.getText()));
+                ps.setInt(4, id);
+
+                ps.executeUpdate();
 
                 modal.close();
+                table.setItems(getDataFromDB());
+                table.refresh();
 
-            } catch (NumberFormatException ex) {
-                new Alert(Alert.AlertType.ERROR,
-                        "La entrada debe ser un número válido").show();
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
         });
 
-        HBox botones = new HBox(10, btnGuardar, btnCancelar);
-        botones.setAlignment(Pos.CENTER_RIGHT);
-
-        rootModal.getChildren().addAll(
-                title,
-                crearLabel("Nombre"), txtNombre,
-                crearLabel("Descripción"), txtDescripcion,
-                crearLabel("Stock actual"), txtStockActual,
-                crearLabel("Entrada (+)"), txtEntrada,
-                botones
+        layout.getChildren().addAll(
+                new Label("Nombre"), txtNombre,
+                new Label("Descripción"), txtDescripcion,
+                new Label("Stock"), txtStock,
+                btnGuardar
         );
 
-        modal.setScene(new Scene(rootModal, 400, 420));
+        modal.setScene(new Scene(layout, 350, 350));
         modal.showAndWait();
     }
 
-    /* ================= UTILIDADES ================= */
+    private void eliminarMedicamento(int idMedicamento) {
+        try {
+            Connection conn = ConexionDB.getInstance();
+            PreparedStatement ps = conn.prepareStatement(
+                    "DELETE FROM medicamentos WHERE id_medicamento=?");
+            ps.setInt(1, idMedicamento);
+            ps.executeUpdate();
+
+            table.setItems(getDataFromDB());
+            table.refresh();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 
     private TableColumn<ObservableList<Object>, Object> createColumn(
             String title, int index, Pos alignment) {
 
-        TableColumn<ObservableList<Object>, Object> col = new TableColumn<>(title);
+        TableColumn<ObservableList<Object>, Object> col =
+                new TableColumn<>(title);
+
         col.setCellValueFactory(data ->
                 new javafx.beans.property.SimpleObjectProperty<>(
                         data.getValue().get(index))
         );
+
         col.setStyle("-fx-alignment: " +
                 alignment.name().replace("_", "-") + ";");
+
         return col;
-    }
-
-    private TextField crearInput(String value) {
-        TextField tf = new TextField(value);
-        tf.setStyle("""
-            -fx-background-color: #0f172a;
-            -fx-text-fill: white;
-            -fx-border-color: #374151;
-            -fx-background-radius: 6;
-        """);
-        return tf;
-    }
-
-    private Label crearLabel(String text) {
-        Label l = new Label(text);
-        l.setTextFill(Color.web("#9ca3af"));
-        return l;
     }
 
     private ObservableList<ObservableList<Object>> getDataFromDB() {
@@ -284,15 +238,18 @@ public class CatalogoView {
             Statement stmt = conn.createStatement();
 
             ResultSet rs = stmt.executeQuery("""
-                SELECT nombre, nombre AS descripcion, stock
+                SELECT id_medicamento, nombre, descripcion, stock
                 FROM medicamentos
                 ORDER BY nombre
             """);
 
             int i = 1;
+
             while (rs.next()) {
                 int stock = rs.getInt("stock");
+
                 data.add(FXCollections.observableArrayList(
+                        rs.getInt("id_medicamento"),
                         i++,
                         rs.getString("nombre"),
                         rs.getString("descripcion"),
