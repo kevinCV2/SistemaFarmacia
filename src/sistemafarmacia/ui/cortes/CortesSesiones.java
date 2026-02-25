@@ -157,34 +157,35 @@ public class CortesSesiones {
     }
 
     private CorteDiario consultarBaseDatos(LocalDate fecha) {
-        // Consulta extendida para traer todos los conceptos
-        String sql = "SELECT " +
-                     "COALESCE(SUM(total), 0) as ingresos, " +
-                     "COALESCE(SUM(adicionales), 0) as m_adicionales, " +
-                     "COALESCE(SUM(pendientes), 0) as m_pendientes, " +
-                     "COALESCE(SUM(gastos), 0) as m_gastos, " +
-                     "COALESCE(SUM(inversion), 0) as m_inversion, " +
-                     "COALESCE((SELECT COUNT(*) FROM tickets WHERE CAST(fecha AS DATE) = ?), 0) as num_sesiones " +
-                     "FROM tickets WHERE CAST(fecha AS DATE) = ?";
-        
-        try (Connection conn = ConexionDB.getInstance();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        // Hemos eliminado las columnas inexistentes y dejado solo 'total'
+        // que es la columna estándar para ingresos.
+        String sql = """
+        SELECT 
+            COALESCE(SUM(total), 0) as ingresos, 
+            COALESCE(COUNT(*), 0) as num_sesiones 
+        FROM tickets 
+        WHERE CAST(fecha AS DATE) = ?
+    """;
+
+        try (Connection conn = ConexionDB.getInstance(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setDate(1, java.sql.Date.valueOf(fecha));
-            ps.setDate(2, java.sql.Date.valueOf(fecha));
             ResultSet rs = ps.executeQuery();
-            
+
             if (rs.next()) {
                 double ingresos = rs.getDouble("ingresos");
                 double numSes = rs.getDouble("num_sesiones");
-                double adic = rs.getDouble("m_adicionales");
-                double pend = rs.getDouble("m_pendientes");
-                double gastos = rs.getDouble("m_gastos");
-                double inv = rs.getDouble("m_inversion");
-                
-                // Cálculo: Ingresos + Adicionales - Gastos - Inversión (Ajustar según tu lógica de negocio)
-                double neto = (ingresos + adic) - gastos - inv;
 
-                return new CorteDiario(fecha, numSes, adic, pend, gastos, inv, neto);
+                // Como las columnas no existen en la DB, enviamos 0.0 a los campos adicionales
+                // para que la tabla de la interfaz no se rompa pero el programa no de error.
+                return new CorteDiario(
+                        fecha,
+                        numSes, // Sesiones
+                        0.0, // Adicionales (No existen en DB)
+                        0.0, // Pendientes (No existen en DB)
+                        0.0, // Gastos (No existen en DB)
+                        0.0, // Inversion (No existen en DB)
+                        ingresos // Neto (Usamos el total de la DB)
+                );
             }
         } catch (Exception e) {
             e.printStackTrace();

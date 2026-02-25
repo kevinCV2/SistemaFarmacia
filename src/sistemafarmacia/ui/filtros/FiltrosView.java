@@ -53,7 +53,6 @@ public class FiltrosView {
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         table.setStyle("-fx-base: #1f2933; -fx-control-inner-background: #111827; -fx-background-color: #111827;");
 
-        // Configuración de columnas
         table.getColumns().add(createColumn("ID", 0, Pos.CENTER, false));
         table.getColumns().add(createColumn("No.", 1, Pos.CENTER, true));
         table.getColumns().add(createColumn("Presentación", 2, Pos.CENTER_LEFT, true));
@@ -63,7 +62,6 @@ public class FiltrosView {
         table.getColumns().add(createColumn("Salidas", 6, Pos.CENTER, true));
         table.getColumns().add(createColumn("Stock Final", 7, Pos.CENTER, true));
 
-        // Columna de Acciones (Movimientos y Borrar)
         TableColumn<ObservableList<Object>, Void> accionesCol = new TableColumn<>("Acciones");
         accionesCol.setCellFactory(col -> new TableCell<>() {
             private final Button btnMov = new Button("📦");
@@ -71,8 +69,8 @@ public class FiltrosView {
             private final HBox box = new HBox(8, btnMov, btnDelete);
             {
                 box.setAlignment(Pos.CENTER);
-                btnMov.setStyle("-fx-background-color:#10b981; -fx-text-fill:white;");
-                btnDelete.setStyle("-fx-background-color:#dc2626; -fx-text-fill:white;");
+                btnMov.setStyle("-fx-background-color:#10b981; -fx-text-fill:white; -fx-cursor:hand;");
+                btnDelete.setStyle("-fx-background-color:#dc2626; -fx-text-fill:white; -fx-cursor:hand;");
 
                 btnMov.setOnAction(e -> abrirVentanaMovimiento(getTableView().getItems().get(getIndex())));
                 btnDelete.setOnAction(e -> confirmarEliminacion(Integer.parseInt(getTableView().getItems().get(getIndex()).get(0).toString())));
@@ -96,7 +94,6 @@ public class FiltrosView {
         table.refresh();
     }
 
-    // --- LÓGICA DE MOVIMIENTOS ---
     private void abrirVentanaMovimiento(ObservableList<Object> row) {
         Stage modal = new Stage();
         modal.initModality(Modality.APPLICATION_MODAL);
@@ -128,8 +125,10 @@ public class FiltrosView {
     }
 
     private void registrarMovimientoInDB(int id, String tipo, int cantidad) {
-        try (Connection conn = ConexionDB.getInstance()) {
-            PreparedStatement ps = conn.prepareStatement("INSERT INTO movimientos (id_medicamento, tipo, cantidad) VALUES (?, ?, ?)");
+        // CORRECCIÓN: Nombre de tabla movimientos_inventario y uso de NOW()
+        String sql = "INSERT INTO movimientos_inventario (id_medicamento, tipo, cantidad, fecha) VALUES (?, ?, ?, NOW())";
+        try (Connection conn = ConexionDB.getInstance();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
             ps.setString(2, tipo);
             ps.setInt(3, cantidad);
@@ -137,21 +136,21 @@ public class FiltrosView {
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    // --- CONSULTA SQL CON FILTRO Y SUMA SEMANAL ---
     private ObservableList<ObservableList<Object>> getFiltrosFromDB() {
         ObservableList<ObservableList<Object>> data = FXCollections.observableArrayList();
-        // Nota: Cambié ILIKE por LIKE para compatibilidad estándar, 
-        // y agregué la lógica de suma por semana y filtro por nombre "Filtro"
+        
+        // CORRECCIÓN POSTGRESQL: date_trunc para semanas, ILIKE para búsqueda insensible a mayúsculas
+        // y GROUP BY completo.
         String sql = """
             SELECT 
-                m.id_medicamento, m.nombre, m.descripcion, m.stock_inicial,
+                m.id_medicamento, m.nombre, m.descripcion, m.stock AS stock_inicial,
                 COALESCE(SUM(CASE WHEN mov.tipo = 'ENTRADA' THEN mov.cantidad ELSE 0 END), 0) AS entradas,
                 COALESCE(SUM(CASE WHEN mov.tipo = 'SALIDA' THEN mov.cantidad ELSE 0 END), 0) AS salidas
             FROM medicamentos m
-            LEFT JOIN movimientos mov ON m.id_medicamento = mov.id_medicamento 
-                 AND mov.fecha >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
-            WHERE m.nombre LIKE '%Filtro%'
-            GROUP BY m.id_medicamento
+            LEFT JOIN movimientos_inventario mov ON m.id_medicamento = mov.id_medicamento 
+                 AND mov.fecha >= date_trunc('week', CURRENT_DATE)
+            WHERE m.nombre ILIKE '%Filtro%'
+            GROUP BY m.id_medicamento, m.nombre, m.descripcion, m.stock
             ORDER BY m.nombre
         """;
 
@@ -179,12 +178,14 @@ public class FiltrosView {
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, "¿Eliminar este filtro?", ButtonType.OK, ButtonType.CANCEL);
         confirm.showAndWait().ifPresent(response -> {
             if (response == ButtonType.OK) {
-                try (Connection conn = ConexionDB.getInstance()) {
-                    PreparedStatement ps = conn.prepareStatement("DELETE FROM medicamentos WHERE id_medicamento=?");
+                try (Connection conn = ConexionDB.getInstance();
+                     PreparedStatement ps = conn.prepareStatement("DELETE FROM medicamentos WHERE id_medicamento=?")) {
                     ps.setInt(1, id);
                     ps.executeUpdate();
                     actualizarTabla();
-                } catch (Exception e) { e.printStackTrace(); }
+                } catch (Exception e) { 
+                    new Alert(Alert.AlertType.ERROR, "No se pudo eliminar: existen registros asociados.").show();
+                }
             }
         });
     }
