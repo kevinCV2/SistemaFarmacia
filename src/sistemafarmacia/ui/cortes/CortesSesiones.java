@@ -1,45 +1,40 @@
 package sistemafarmacia.ui.cortes;
 
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.print.*;
-import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
-import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
-import javafx.stage.Modality;
-import javafx.stage.Stage;
-import sistemafarmacia.utils.UIComponents;
-import sistemafarmacia.utils.ConexionDB;
-
+import javafx.scene.text.Text;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
 import java.text.NumberFormat;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.format.TextStyle;
+import java.time.temporal.TemporalAdjusters;
 import java.util.Locale;
-
+import sistemafarmacia.utils.UIComponents;
+import sistemafarmacia.utils.ConexionDB;
 
 public class CortesSesiones {
-    
+
     private BorderPane root;
-    private TableView<CorteRenglon> tablaCortes;
+    private TableView<CorteDiario> tablaSesiones;
+    private DatePicker datePickerSemana;
+    private Label lblTotalSemanal;
+    private Label lblSesionesTotales;
     private Runnable actionVolver;
-    private DatePicker dateDesde, dateHasta;
-    private Label lblContadorCortes;
-    private Label lblVentasSemanales; // Referencia para actualizar el monto
-    private int cortesRealizados = 0;
 
     public CortesSesiones(Runnable actionVolver) {
         this.actionVolver = actionVolver;
-
         root = new BorderPane();
         root.setStyle("-fx-background-color: #1f2933;");
 
@@ -55,56 +50,37 @@ public class CortesSesiones {
         btnVolver.setOnAction(e -> { if (this.actionVolver != null) this.actionVolver.run(); });
 
         VBox headerText = new VBox(5);
-        Label title = new Label("Almacén Digital");
+        Label title = new Label("Control de Sesiones");
         title.setFont(Font.font("System Bold", 28));
         title.setTextFill(Color.WHITE);
-        Label subtitle = new Label("Control de Insumos y Movimientos");
+        Label subtitle = new Label("Reporte Semanal de Ingresos, Gastos e Inversiones");
         subtitle.setTextFill(Color.web("#9ca3af"));
         headerText.getChildren().addAll(title, subtitle);
         topBar.getChildren().addAll(btnVolver, headerText);
 
         // --- STATS PANEL ---
         HBox statsPanel = new HBox(20);
+        VBox cardVentas = (VBox) UIComponents.statCard("Ingreso Neto Semanal", "$0.00", "/sistemafarmacia/assets/icons/Ventas2.png");
+        lblTotalSemanal = (Label) cardVentas.lookup(".label");
         
-        // Creamos las tarjetas vacías inicialmente
-        VBox cardVentas = (VBox) UIComponents.statCard("Ventas Semanales", "$0.00", "/sistemafarmacia/assets/icons/Ventas2.png");
-        lblVentasSemanales = (Label) cardVentas.lookup(".label"); // Obtenemos el Label del valor
-        
-        VBox cardCortes = (VBox) UIComponents.statCard("Cortes Generados", "0", "/sistemafarmacia/assets/icons/Cortes semanales.png");
-        lblContadorCortes = (Label) cardCortes.lookup(".label");
+        VBox cardSesiones = (VBox) UIComponents.statCard("Total Sesiones", "0", "/sistemafarmacia/assets/icons/Cortes semanales.png");
+        lblSesionesTotales = (Label) cardSesiones.lookup(".label");
 
         HBox.setHgrow(cardVentas, Priority.ALWAYS);
-        HBox.setHgrow(cardCortes, Priority.ALWAYS);
-        statsPanel.getChildren().addAll(cardVentas, cardCortes);
+        HBox.setHgrow(cardSesiones, Priority.ALWAYS);
+        statsPanel.getChildren().addAll(cardVentas, cardSesiones);
 
         // --- TOOLBAR ---
         HBox toolbar = createToolbar();
 
         // --- TABLE ---
-        tablaCortes = createTable();
-        VBox.setVgrow(tablaCortes, Priority.ALWAYS);
+        tablaSesiones = createTableSesiones();
+        VBox.setVgrow(tablaSesiones, Priority.ALWAYS);
 
-        content.getChildren().addAll(topBar, statsPanel, toolbar, tablaCortes);
+        content.getChildren().addAll(topBar, statsPanel, toolbar, tablaSesiones);
         root.setCenter(content);
 
-        // Cargar datos dinámicos
-        cargarDatosDesdeBD();
-        actualizarVentasSemanales();
-    }
-
-    private void actualizarVentasSemanales() {
-        // Suma de la columna "total" en la tabla "tickets" de los últimos 7 días
-        String sql = "SELECT SUM(total) FROM tickets WHERE fecha >= CURRENT_DATE - INTERVAL '7 days'";
-        try (Connection conn = ConexionDB.getInstance();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            if (rs.next()) {
-                double total = rs.getDouble(1);
-                lblVentasSemanales.setText(NumberFormat.getCurrencyInstance(Locale.US).format(total));
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        cargarDatos();
     }
 
     private HBox createToolbar() {
@@ -112,158 +88,188 @@ public class CortesSesiones {
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.setStyle("-fx-background-color: #111827; -fx-padding: 15; -fx-background-radius: 10;");
 
-        Label l1 = new Label("Desde:"); l1.setTextFill(Color.WHITE);
-        dateDesde = new DatePicker(LocalDate.now().minusDays(7));
-        Label l2 = new Label("Hasta:"); l2.setTextFill(Color.WHITE);
-        dateHasta = new DatePicker(LocalDate.now());
-
-        // Al cambiar fechas, recargar datos
-        dateDesde.setOnAction(e -> cargarDatosDesdeBD());
-        dateHasta.setOnAction(e -> cargarDatosDesdeBD());
+        Label lblSelect = new Label("Seleccionar Semana:");
+        lblSelect.setTextFill(Color.WHITE);
+        
+        datePickerSemana = new DatePicker(LocalDate.now());
+        datePickerSemana.setOnAction(e -> cargarDatos());
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button btnGenerar = new Button("Generar Corte Nuevo");
-        btnGenerar.setStyle("-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;");
-        btnGenerar.setOnAction(e -> imprimirSinPerdida());
+        Button btnPrint = new Button("🖨 Imprimir Formato");
+        btnPrint.setStyle("-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;");
+        btnPrint.setOnAction(e -> imprimirReporte());
 
-        toolbar.getChildren().addAll(l1, dateDesde, l2, dateHasta, spacer, btnGenerar);
+        toolbar.getChildren().addAll(lblSelect, datePickerSemana, spacer, btnPrint);
         return toolbar;
     }
 
-    private void cargarDatosDesdeBD() {
-        tablaCortes.getItems().clear();
-        LocalDate desde = dateDesde.getValue();
-        LocalDate hasta = dateHasta.getValue();
+    private TableView<CorteDiario> createTableSesiones() {
+        TableView<CorteDiario> table = new TableView<>();
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        table.setStyle("-fx-base: #1f2933; -fx-control-inner-background: #111827;");
 
-        // Consulta que une categorías, medicamentos y suma movimientos (Entradas/Salidas)
-        String sql = """
-            SELECT 
-                c.nombre AS cat, 
-                m.nombre AS med, 
-                m.stock,
-                COALESCE((SELECT SUM(cantidad) FROM movimientos_inventario WHERE id_medicamento = m.id_medicamento AND tipo = 'ENTRADA' AND CAST(fecha AS DATE) BETWEEN ? AND ?), 0) as entradas,
-                COALESCE((SELECT SUM(cantidad) FROM movimientos_inventario WHERE id_medicamento = m.id_medicamento AND tipo = 'SALIDA' AND CAST(fecha AS DATE) BETWEEN ? AND ?), 0) as salidas
-            FROM categorias c 
-            JOIN medicamentos m ON m.id_categoria = c.id_categoria 
-            ORDER BY c.nombre, m.nombre;
-            """;
+        TableColumn<CorteDiario, String> colFecha = new TableColumn<>("DÍA / FECHA");
+        colFecha.setCellValueFactory(new PropertyValueFactory<>("fechaLabel"));
 
+        TableColumn<CorteDiario, Double> colSes = new TableColumn<>("SESIONES");
+        colSes.setCellValueFactory(new PropertyValueFactory<>("sesiones"));
+
+        TableColumn<CorteDiario, Double> colAdic = new TableColumn<>("ADICIONALES");
+        colAdic.setCellValueFactory(new PropertyValueFactory<>("adicionales"));
+
+        TableColumn<CorteDiario, Double> colPend = new TableColumn<>("PENDIENTES");
+        colPend.setCellValueFactory(new PropertyValueFactory<>("pendientes"));
+
+        TableColumn<CorteDiario, Double> colGastos = new TableColumn<>("GASTOS");
+        colGastos.setCellValueFactory(new PropertyValueFactory<>("gastos"));
+
+        TableColumn<CorteDiario, Double> colInv = new TableColumn<>("INV. ADICIONAL");
+        colInv.setCellValueFactory(new PropertyValueFactory<>("inversion"));
+
+        TableColumn<CorteDiario, Double> colNeto = new TableColumn<>("TOTAL NETO");
+        colNeto.setCellValueFactory(new PropertyValueFactory<>("neto"));
+        colNeto.setStyle("-fx-font-weight: bold; -fx-text-fill: #34d399;");
+
+        table.getColumns().addAll(colFecha, colSes, colAdic, colPend, colGastos, colInv, colNeto);
+        return table;
+    }
+
+    private void cargarDatos() {
+        ObservableList<CorteDiario> lista = FXCollections.observableArrayList();
+        LocalDate lunes = datePickerSemana.getValue().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        
+        double sumaSemana = 0;
+        int totalSesiones = 0;
+
+        for (int i = 0; i < 6; i++) { // Lunes a Sábado
+            LocalDate dia = lunes.plusDays(i);
+            CorteDiario cd = consultarBaseDatos(dia);
+            lista.add(cd);
+            sumaSemana += cd.getNeto();
+            totalSesiones += (int) cd.getSesiones();
+        }
+
+        tablaSesiones.setItems(lista);
+        lblTotalSemanal.setText(NumberFormat.getCurrencyInstance(Locale.US).format(sumaSemana));
+        lblSesionesTotales.setText(String.valueOf(totalSesiones));
+    }
+
+    private CorteDiario consultarBaseDatos(LocalDate fecha) {
+        // Consulta extendida para traer todos los conceptos
+        String sql = "SELECT " +
+                     "COALESCE(SUM(total), 0) as ingresos, " +
+                     "COALESCE(SUM(adicionales), 0) as m_adicionales, " +
+                     "COALESCE(SUM(pendientes), 0) as m_pendientes, " +
+                     "COALESCE(SUM(gastos), 0) as m_gastos, " +
+                     "COALESCE(SUM(inversion), 0) as m_inversion, " +
+                     "COALESCE((SELECT COUNT(*) FROM tickets WHERE CAST(fecha AS DATE) = ?), 0) as num_sesiones " +
+                     "FROM tickets WHERE CAST(fecha AS DATE) = ?";
+        
         try (Connection conn = ConexionDB.getInstance();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-            
-            ps.setDate(1, java.sql.Date.valueOf(desde));
-            ps.setDate(2, java.sql.Date.valueOf(hasta));
-            ps.setDate(3, java.sql.Date.valueOf(desde));
-            ps.setDate(4, java.sql.Date.valueOf(hasta));
-
+            ps.setDate(1, java.sql.Date.valueOf(fecha));
+            ps.setDate(2, java.sql.Date.valueOf(fecha));
             ResultSet rs = ps.executeQuery();
-            String catActual = "";
-            int n = 1;
-
-            while (rs.next()) {
-                String cat = rs.getString("cat");
-                if (!cat.equals(catActual)) {
-                    tablaCortes.getItems().add(new CorteRenglon(cat));
-                    catActual = cat;
-                    n = 1;
-                }
+            
+            if (rs.next()) {
+                double ingresos = rs.getDouble("ingresos");
+                double numSes = rs.getDouble("num_sesiones");
+                double adic = rs.getDouble("m_adicionales");
+                double pend = rs.getDouble("m_pendientes");
+                double gastos = rs.getDouble("m_gastos");
+                double inv = rs.getDouble("m_inversion");
                 
-                int stockActual = rs.getInt("stock");
-                int ent = rs.getInt("entradas");
-                int sal = rs.getInt("salidas");
-                // Inventario Inicial = Stock Actual + Salidas - Entradas (para retroceder en el tiempo al reporte)
-                int invInicial = stockActual + sal - ent;
+                // Cálculo: Ingresos + Adicionales - Gastos - Inversión (Ajustar según tu lógica de negocio)
+                double neto = (ingresos + adic) - gastos - inv;
 
-                tablaCortes.getItems().add(new CorteRenglon(
-                    String.valueOf(n++), 
-                    "PZA", 
-                    rs.getString("med"), 
-                    String.valueOf(invInicial), 
-                    String.valueOf(ent), 
-                    String.valueOf(sal), 
-                    String.valueOf(stockActual)
-                ));
+                return new CorteDiario(fecha, numSes, adic, pend, gastos, inv, neto);
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
+        return new CorteDiario(fecha, 0, 0, 0, 0, 0, 0);
     }
 
-    // --- MÉTODOS DE IMPRESIÓN Y TABLA (Se mantienen igual con lógica de impresión corregida) ---
-
-    private void imprimirSinPerdida() {
+    private void imprimirReporte() {
         PrinterJob job = PrinterJob.createPrinterJob();
-        if (job == null) return;
-        Stage stage = (Stage) root.getScene().getWindow();
-        if (!job.showPrintDialog(stage)) return;
+        if (job != null && job.showPrintDialog(root.getScene().getWindow())) {
+            VBox printable = new VBox(15);
+            printable.setPadding(new Insets(30));
+            printable.setStyle("-fx-background-color: white;");
 
-        // Registro del corte en la base de datos (Opcional según tu diagrama 'cortes_caja')
-        // Aquí podrías insertar en la tabla 'cortes_caja' si lo deseas.
-
-        cortesRealizados++;
-        if (lblContadorCortes != null) lblContadorCortes.setText(String.valueOf(cortesRealizados));
-        mostrarAlertaConfirmacion();
-        job.endJob();
-    }
-
-    private void mostrarAlertaConfirmacion() {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle("Operación Exitosa");
-        alert.setHeaderText(null);
-        alert.setContentText("El reporte de inventario y ventas se ha generado correctamente.");
-        alert.showAndWait();
-    }
-
-    private TableView<CorteRenglon> createTable() {
-        TableView<CorteRenglon> table = new TableView<>();
-        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
-        table.setStyle("-fx-base: #1f2933; -fx-control-inner-background: #111827;");
-
-        TableColumn<CorteRenglon, String> c1 = new TableColumn<>("No.");
-        c1.setCellValueFactory(new PropertyValueFactory<>("numero"));
-        TableColumn<CorteRenglon, String> c2 = new TableColumn<>("Descripción");
-        c2.setCellValueFactory(new PropertyValueFactory<>("descripcion"));
-        TableColumn<CorteRenglon, String> c3 = new TableColumn<>("S. Inicial");
-        c3.setCellValueFactory(new PropertyValueFactory<>("existencia"));
-        TableColumn<CorteRenglon, String> c4 = new TableColumn<>("Ent.");
-        c4.setCellValueFactory(new PropertyValueFactory<>("entrada"));
-        TableColumn<CorteRenglon, String> c5 = new TableColumn<>("Sal.");
-        c5.setCellValueFactory(new PropertyValueFactory<>("salida"));
-        TableColumn<CorteRenglon, String> c6 = new TableColumn<>("S. Final");
-        c6.setCellValueFactory(new PropertyValueFactory<>("inventarioFinal"));
-
-        table.getColumns().addAll(c1, c2, c3, c4, c5, c6);
-
-        table.setRowFactory(tv -> new TableRow<>() {
-            @Override protected void updateItem(CorteRenglon item, boolean empty) {
-                super.updateItem(item, empty);
-                if (item != null && item.isEsSeccion()) setStyle("-fx-background-color: #1e3a8a; -fx-font-weight: bold;");
-                else setStyle("");
+            Text header = new Text("REPORTE SEMANAL DE SESIONES - " + 
+                datePickerSemana.getValue().getMonth().getDisplayName(TextStyle.FULL, new Locale("es")).toUpperCase());
+            header.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+            
+            GridPane grid = new GridPane();
+            grid.setGridLinesVisible(true);
+            
+            // Encabezados de columna
+            String[] headers = {"CONCEPTO", "LUN", "MAR", "MIE", "JUE", "VIE", "SAB"};
+            for (int i = 0; i < headers.length; i++) {
+                Label l = new Label(headers[i]);
+                l.setStyle("-fx-font-weight: bold; -fx-padding: 5; -fx-font-size: 10px;");
+                l.setPrefWidth(70);
+                grid.add(l, i, 0);
             }
-        });
-        return table;
+
+            // Filas de conceptos según tu serie solicitada
+            String[] conceptos = {"SESIONES", "ADICIONALES", "PENDIENTES", "GASTOS", "INV. ADIC.", "NETO"};
+            for (int r = 0; r < conceptos.length; r++) {
+                Label lblConcepto = new Label(conceptos[r]);
+                lblConcepto.setStyle("-fx-font-weight: bold; -fx-padding: 5; -fx-font-size: 9px;");
+                grid.add(lblConcepto, 0, r + 1);
+                
+                for (int c = 0; c < 6; c++) {
+                    CorteDiario d = tablaSesiones.getItems().get(c);
+                    double valor = 0;
+                    switch(r) {
+                        case 0: valor = d.getSesiones(); break;
+                        case 1: valor = d.getAdicionales(); break;
+                        case 2: valor = d.getPendientes(); break;
+                        case 3: valor = d.getGastos(); break;
+                        case 4: valor = d.getInversion(); break;
+                        case 5: valor = d.getNeto(); break;
+                    }
+                    Label v = new Label(String.valueOf(valor));
+                    v.setStyle("-fx-padding: 5; -fx-font-size: 9px;");
+                    grid.add(v, c + 1, r + 1);
+                }
+            }
+
+            printable.getChildren().addAll(header, grid);
+            
+            if (job.printPage(printable)) {
+                job.endJob();
+            }
+        }
     }
 
     public BorderPane getRoot() { return root; }
 
-    public static class CorteRenglon {
-        private String numero, presentacion, descripcion, existencia, entrada, salida, inventarioFinal;
-        private boolean esSeccion;
-        public CorteRenglon(String n, String p, String d, String e, String en, String s, String f) {
-            this.numero = n; this.presentacion = p; this.descripcion = d;
-            this.existencia = e; this.entrada = en; this.salida = s; this.inventarioFinal = f;
-            this.esSeccion = false;
+    // --- MODELO ACTUALIZADO ---
+    public static class CorteDiario {
+        private String fechaLabel;
+        private double sesiones, adicionales, pendientes, gastos, inversion, neto;
+
+        public CorteDiario(LocalDate fecha, double s, double a, double p, double g, double inv, double n) {
+            this.fechaLabel = fecha.getDayOfWeek().getDisplayName(TextStyle.FULL, new Locale("es")).toUpperCase() + " " + fecha.getDayOfMonth();
+            this.sesiones = s;
+            this.adicionales = a;
+            this.pendientes = p;
+            this.gastos = g;
+            this.inversion = inv;
+            this.neto = n;
         }
-        public CorteRenglon(String s) { this.descripcion = s; this.esSeccion = true; }
-        public String getNumero() { return numero; }
-        public String getPresentacion() { return presentacion; }
-        public String getDescripcion() { return descripcion; }
-        public String getExistencia() { return existencia; }
-        public String getEntrada() { return entrada; }
-        public String getSalida() { return salida; }
-        public String getInventarioFinal() { return inventarioFinal; }
-        public boolean isEsSeccion() { return esSeccion; }
+
+        public String getFechaLabel() { return fechaLabel; }
+        public double getSesiones() { return sesiones; }
+        public double getAdicionales() { return adicionales; }
+        public double getPendientes() { return pendientes; }
+        public double getGastos() { return gastos; }
+        public double getInversion() { return inversion; }
+        public double getNeto() { return neto; }
     }
 }

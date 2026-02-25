@@ -256,7 +256,7 @@ public class GenerarTicketView {
         lblTicketDireccion = new Label("C. valle embrujado 131,\nPachuca, Hidalgo");
         lblTicketDireccion.setFont(Font.font("Courier New", FontWeight.BOLD, 15)); lblTicketDireccion.setStyle("-fx-text-fill: black;");
 
-        lblTicketNumero = new Label("TEL: 7713778107, 77110227324");
+        lblTicketNumero = new Label("TEL: 7713778107, 7711027324");
         lblTicketNumero.setFont(Font.font("Courier New", FontWeight.BOLD, 15)); lblTicketNumero.setStyle("-fx-text-fill: black;");
 
         VBox bTicket = crearBloqueCentrado("No. TICKET:", "000000");
