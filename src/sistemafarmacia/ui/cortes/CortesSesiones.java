@@ -273,4 +273,5 @@ public class CortesSesiones {
         public double getInversion() { return inversion; }
         public double getNeto() { return neto; }
     }
+
 }

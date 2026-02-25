@@ -1,270 +1,118 @@
 package sistemafarmacia.ui.catalogo;
 
-import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
+import javafx.scene.media.Media;
+import javafx.scene.media.MediaPlayer;
+import javafx.scene.media.MediaView;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
-import javafx.stage.Modality;
-import javafx.stage.Stage;
-import sistemafarmacia.utils.ConexionDB;
-
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.Statement;
+import javafx.scene.text.FontWeight;
+import javafx.scene.text.TextAlignment;
+import java.net.URL;
 
 public class CatalogoMedicamentoView {
-    
+
     private BorderPane root;
-    private TableView<ObservableList<Object>> table;
     private Runnable actionVolver;
+    private MediaPlayer mediaPlayer;
 
     public CatalogoMedicamentoView(Runnable actionVolver) {
         this.actionVolver = actionVolver;
-
         root = new BorderPane();
         root.setStyle("-fx-background-color: #1f2933;");
 
-        VBox content = new VBox(20);
-        content.setPadding(new Insets(20));
-
-        HBox topBar = new HBox(25);
+        // --- BARRA SUPERIOR ---
+        HBox topBar = new HBox(20);
+        topBar.setPadding(new Insets(15, 20, 15, 20));
         topBar.setAlignment(Pos.CENTER_LEFT);
 
-        Button btnVolver = new Button("⬅ Volver");
-        btnVolver.setStyle("""
-            -fx-background-color: transparent;
-            -fx-text-fill: #9ca3af;
-            -fx-border-color: #374151;
-            -fx-border-radius: 5;
-            -fx-cursor: hand;
-        """);
-
+        Button btnVolver = new Button("⬅ Regresar");
+        btnVolver.setStyle(
+                "-fx-background-color: transparent;" +
+                "-fx-text-fill: white;" +
+                "-fx-border-color: #374151;" +
+                "-fx-border-radius: 5;" +
+                "-fx-cursor: hand;"
+        );
         btnVolver.setOnAction(e -> {
-            if (actionVolver != null) actionVolver.run();
+            if (mediaPlayer != null) mediaPlayer.stop(); // Detener video al salir
+            if (this.actionVolver != null) this.actionVolver.run();
         });
 
-        VBox headerText = new VBox(5);
         Label title = new Label("Catálogo de Medicamentos");
-        title.setFont(Font.font(26));
-        title.setTextFill(Color.WHITE);
+        title.setFont(Font.font("System", FontWeight.BOLD, 22));
+        title.setStyle("-fx-text-fill: white;");
 
-        Label subtitle = new Label("Listado y control de inventario");
-        subtitle.setTextFill(Color.web("#9ca3af"));
+        topBar.getChildren().addAll(btnVolver, title);
+        root.setTop(topBar);
 
-        headerText.getChildren().addAll(title, subtitle);
-        topBar.getChildren().addAll(btnVolver, headerText);
+        // --- CONTENIDO ---
+        VBox modoMantenimiento = new VBox(20);
+        modoMantenimiento.setAlignment(Pos.CENTER);
+        modoMantenimiento.setPadding(new Insets(50));
 
-        table = new TableView<>();
-        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
-        table.setStyle("""
-            -fx-base: #1f2933;
-            -fx-control-inner-background: #111827;
-            -fx-background-color: #111827;
-        """);
+        // 🎬 CARGA DEL VIDEO (NOMBRE EXACTO CON EXTENSIÓN)
+        String videoPath = "/sistemafarmacia/assets/PixVerse_V5.6_Image_Text_360P_gif_hamsters_mor.mp4";
+        URL videoUrl = getClass().getResource(videoPath);
 
-        TableColumn<ObservableList<Object>, Object> idCol =
-                createColumn("ID", 0, Pos.CENTER);
-        idCol.setVisible(false);
-
-        table.getColumns().add(idCol);
-        table.getColumns().add(createColumn("No.", 1, Pos.CENTER));
-        table.getColumns().add(createColumn("Presentación", 2, Pos.CENTER_LEFT));
-        table.getColumns().add(createColumn("Descripción", 3, Pos.CENTER_LEFT));
-        table.getColumns().add(createColumn("Existencia", 4, Pos.CENTER));
-        table.getColumns().add(createColumn("Entrada", 5, Pos.CENTER));
-        table.getColumns().add(createColumn("Salidas", 6, Pos.CENTER));
-        table.getColumns().add(createColumn("Inventario Final", 7, Pos.CENTER));
-
-        // ACCIONES
-        TableColumn<ObservableList<Object>, Void> accionesCol =
-                new TableColumn<>("Acciones");
-
-        accionesCol.setCellFactory(col -> new TableCell<>() {
-
-            private final Button btnEdit = new Button("✏️");
-            private final Button btnDelete = new Button("🗑");
-            private final HBox box = new HBox(8, btnEdit, btnDelete);
-
-            {
-                box.setAlignment(Pos.CENTER);
-
-                btnEdit.setStyle("-fx-background-color:#2563eb; -fx-text-fill:white;");
-                btnDelete.setStyle("-fx-background-color:#dc2626; -fx-text-fill:white;");
-
-                btnEdit.setOnAction(e -> {
-                    ObservableList<Object> row =
-                            getTableView().getItems().get(getIndex());
-                    abrirVentanaEditar(row);
-                });
-
-                btnDelete.setOnAction(e -> {
-                    ObservableList<Object> row =
-                            getTableView().getItems().get(getIndex());
-
-                    int idMedicamento = Integer.parseInt(row.get(0).toString());
-
-                    Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
-                    confirm.setTitle("Confirmar eliminación");
-                    confirm.setHeaderText("¿Eliminar medicamento?");
-                    confirm.setContentText("Esta acción no se puede deshacer.");
-
-                    confirm.showAndWait().ifPresent(response -> {
-                        if (response == ButtonType.OK) {
-                            eliminarMedicamento(idMedicamento);
-                        }
-                    });
-                });
-            }
-
-            @Override
-            protected void updateItem(Void item, boolean empty) {
-                super.updateItem(item, empty);
-                setGraphic(empty ? null : box);
-            }
-        });
-
-        table.getColumns().add(accionesCol);
-
-        VBox.setVgrow(table, Priority.ALWAYS);
-        content.getChildren().addAll(topBar, table);
-        root.setCenter(content);
-
-        table.setItems(getDataFromDB());
-    }
-
-    // ===== METODO EDITAR =====
-    private void abrirVentanaEditar(ObservableList<Object> row) {
-
-        Stage modal = new Stage();
-        modal.initModality(Modality.APPLICATION_MODAL);
-        modal.setTitle("Editar Medicamento");
-
-        VBox layout = new VBox(15);
-        layout.setPadding(new Insets(20));
-        layout.setStyle("-fx-background-color:#111827;");
-
-        TextField txtNombre = new TextField(row.get(2).toString());
-        TextField txtDescripcion = new TextField(row.get(3).toString());
-        TextField txtStock = new TextField(row.get(4).toString());
-
-        Button btnGuardar = new Button("Guardar");
-        btnGuardar.setStyle("-fx-background-color:#2563eb; -fx-text-fill:white;");
-
-        btnGuardar.setOnAction(e -> {
+        if (videoUrl != null) {
             try {
-                int id = Integer.parseInt(row.get(0).toString());
+                Media media = new Media(videoUrl.toExternalForm());
+                mediaPlayer = new MediaPlayer(media);
+                mediaPlayer.setCycleCount(MediaPlayer.INDEFINITE);
+                mediaPlayer.setMute(true);
+                mediaPlayer.play();
 
-                Connection conn = ConexionDB.getInstance();
-                String sql = """
-                    UPDATE medicamentos
-                    SET nombre=?, descripcion=?, stock=?
-                    WHERE id_medicamento=?
-                """;
+                MediaView mediaView = new MediaView(mediaPlayer);
+                mediaView.setFitWidth(260);
+                mediaView.setPreserveRatio(true);
+                mediaView.setSmooth(true);
 
-                PreparedStatement ps = conn.prepareStatement(sql);
-                ps.setString(1, txtNombre.getText());
-                ps.setString(2, txtDescripcion.getText());
-                ps.setInt(3, Integer.parseInt(txtStock.getText()));
-                ps.setInt(4, id);
-
-                ps.executeUpdate();
-
-                modal.close();
-                table.setItems(getDataFromDB());
-                table.refresh();
-
-            } catch (Exception ex) {
-                ex.printStackTrace();
+                modoMantenimiento.getChildren().add(mediaView);
+            } catch (Exception e) {
+                System.err.println("Error al inicializar el video: " + e.getMessage());
             }
+        } else {
+            // Fallback si falla la carga
+            Label errorVideo = new Label("🐹\n⚠ Video de mantenimiento no encontrado");
+            errorVideo.setTextAlignment(TextAlignment.CENTER);
+            errorVideo.setStyle("-fx-text-fill: #f87171; -fx-font-size: 16px;");
+            modoMantenimiento.getChildren().add(errorVideo);
+        }
+
+        // --- MENSAJE ---
+        Label mensaje = new Label(
+                "Esta sección se encuentra en desarrollo.\n\n" +
+                "Estamos trabajando para que el catálogo de medicamentos\n" +
+                "esté disponible lo antes posible.\n\n" +
+                "Gracias por tu paciencia."
+        );
+
+        mensaje.setFont(Font.font("System", 18));
+        mensaje.setTextFill(Color.web("#9ca3af"));
+        mensaje.setTextAlignment(TextAlignment.CENTER);
+        mensaje.setWrapText(true);
+        mensaje.setMaxWidth(500);
+
+        Button btnInfo = new Button("Más información");
+        btnInfo.setStyle(
+                "-fx-background-color: #374151;" +
+                "-fx-text-fill: #e5e7eb;" +
+                "-fx-cursor: hand;"
+        );
+        btnInfo.setOnAction(e -> {
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle("Información");
+            alert.setHeaderText(null);
+            alert.setContentText("El módulo de catálogo estará disponible en una próxima actualización.");
+            alert.showAndWait();
         });
 
-        layout.getChildren().addAll(
-                new Label("Nombre"), txtNombre,
-                new Label("Descripción"), txtDescripcion,
-                new Label("Stock"), txtStock,
-                btnGuardar
-        );
-
-        modal.setScene(new Scene(layout, 350, 350));
-        modal.showAndWait();
-    }
-
-    private void eliminarMedicamento(int idMedicamento) {
-        try {
-            Connection conn = ConexionDB.getInstance();
-            PreparedStatement ps = conn.prepareStatement(
-                    "DELETE FROM medicamentos WHERE id_medicamento=?");
-            ps.setInt(1, idMedicamento);
-            ps.executeUpdate();
-
-            table.setItems(getDataFromDB());
-            table.refresh();
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private TableColumn<ObservableList<Object>, Object> createColumn(
-            String title, int index, Pos alignment) {
-
-        TableColumn<ObservableList<Object>, Object> col =
-                new TableColumn<>(title);
-
-        col.setCellValueFactory(data ->
-                new javafx.beans.property.SimpleObjectProperty<>(
-                        data.getValue().get(index))
-        );
-
-        col.setStyle("-fx-alignment: " +
-                alignment.name().replace("_", "-") + ";");
-
-        return col;
-    }
-
-    private ObservableList<ObservableList<Object>> getDataFromDB() {
-
-        ObservableList<ObservableList<Object>> data =
-                FXCollections.observableArrayList();
-
-        try {
-            Connection conn = ConexionDB.getInstance();
-            Statement stmt = conn.createStatement();
-
-            ResultSet rs = stmt.executeQuery("""
-                SELECT id_medicamento, nombre, descripcion, stock
-                FROM medicamentos
-                ORDER BY nombre
-            """);
-
-            int i = 1;
-
-            while (rs.next()) {
-                int stock = rs.getInt("stock");
-
-                data.add(FXCollections.observableArrayList(
-                        rs.getInt("id_medicamento"),
-                        i++,
-                        rs.getString("nombre"),
-                        rs.getString("descripcion"),
-                        stock,
-                        0,
-                        0,
-                        stock
-                ));
-            }
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        return data;
+        modoMantenimiento.getChildren().addAll(mensaje, btnInfo);
+        root.setCenter(modoMantenimiento);
     }
 
     public BorderPane getRoot() {
