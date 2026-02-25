@@ -14,7 +14,7 @@ import javafx.stage.Stage;
 import sistemafarmacia.utils.ConexionDB;
 
 import java.sql.*;
-import java.time.LocalDate;
+import java.util.Optional;
 
 public class CatalogoView {
 
@@ -53,8 +53,7 @@ public class CatalogoView {
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         table.setStyle("-fx-base: #1f2933; -fx-control-inner-background: #111827; -fx-background-color: #111827;");
 
-        // Columnas
-        table.getColumns().add(createColumn("ID", 0, Pos.CENTER, false)); // Invisible
+        table.getColumns().add(createColumn("ID", 0, Pos.CENTER, false)); 
         table.getColumns().add(createColumn("No.", 1, Pos.CENTER, true));
         table.getColumns().add(createColumn("Nombre", 2, Pos.CENTER_LEFT, true));
         table.getColumns().add(createColumn("Descripción", 3, Pos.CENTER_LEFT, true));
@@ -63,19 +62,24 @@ public class CatalogoView {
         table.getColumns().add(createColumn("Salidas", 6, Pos.CENTER, true));
         table.getColumns().add(createColumn("Stock Final", 7, Pos.CENTER, true));
 
-        // Columna de Acciones
         TableColumn<ObservableList<Object>, Void> accionesCol = new TableColumn<>("Acciones");
         accionesCol.setCellFactory(col -> new TableCell<>() {
-            private final Button btnMov = new Button("📦"); // Botón para registrar entrada/salida
+            private final Button btnMov = new Button("📦"); 
             private final Button btnDelete = new Button("🗑");
             private final HBox box = new HBox(8, btnMov, btnDelete);
             {
                 box.setAlignment(Pos.CENTER);
-                btnMov.setStyle("-fx-background-color:#10b981; -fx-text-fill:white;");
-                btnDelete.setStyle("-fx-background-color:#dc2626; -fx-text-fill:white;");
+                btnMov.setStyle("-fx-background-color:#10b981; -fx-text-fill:white; -fx-cursor:hand;");
+                btnDelete.setStyle("-fx-background-color:#dc2626; -fx-text-fill:white; -fx-cursor:hand;");
 
                 btnMov.setOnAction(e -> abrirVentanaMovimiento(getTableView().getItems().get(getIndex())));
-                btnDelete.setOnAction(e -> eliminarMedicamento(Integer.parseInt(getTableView().getItems().get(getIndex()).get(0).toString())));
+                btnDelete.setOnAction(e -> {
+                    ObservableList<Object> fila = getTableView().getItems().get(getIndex());
+                    confirmarEliminacion(
+                        Integer.parseInt(fila.get(0).toString()), 
+                        fila.get(2).toString()
+                    );
+                });
             }
             @Override protected void updateItem(Void item, boolean empty) {
                 super.updateItem(item, empty);
@@ -88,7 +92,6 @@ public class CatalogoView {
         content.getChildren().addAll(topBar, table);
         root.setCenter(content);
 
-        // Cargar Datos
         actualizarTabla();
     }
 
@@ -97,7 +100,6 @@ public class CatalogoView {
         table.refresh();
     }
 
-    // Ventana para registrar Entradas o Salidas
     private void abrirVentanaMovimiento(ObservableList<Object> row) {
         Stage modal = new Stage();
         modal.initModality(Modality.APPLICATION_MODAL);
@@ -114,9 +116,13 @@ public class CatalogoView {
 
         Button btnGuardar = new Button("Registrar");
         btnGuardar.setOnAction(e -> {
-            registrarMovimiento(Integer.parseInt(row.get(0).toString()), cbTipo.getValue(), Integer.parseInt(txtCantidad.getText()));
-            modal.close();
-            actualizarTabla();
+            try {
+                registrarMovimiento(Integer.parseInt(row.get(0).toString()), cbTipo.getValue(), Integer.parseInt(txtCantidad.getText()));
+                modal.close();
+                actualizarTabla();
+            } catch (NumberFormatException ex) {
+                new Alert(Alert.AlertType.ERROR, "Ingrese una cantidad válida.").show();
+            }
         });
 
         layout.getChildren().addAll(new Label("Tipo de movimiento:"), cbTipo, new Label("Cantidad:"), txtCantidad, btnGuardar);
@@ -125,8 +131,10 @@ public class CatalogoView {
     }
 
     private void registrarMovimiento(int idMed, String tipo, int cantidad) {
-        try (Connection conn = ConexionDB.getInstance()) {
-            PreparedStatement ps = conn.prepareStatement("INSERT INTO movimientos (id_medicamento, tipo, cantidad) VALUES (?, ?, ?)");
+        // CORRECCIÓN: Nombre de tabla 'movimientos_inventario'
+        String sql = "INSERT INTO movimientos_inventario (id_medicamento, tipo, cantidad, fecha) VALUES (?, ?, ?, NOW())";
+        try (Connection conn = ConexionDB.getInstance();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, idMed);
             ps.setString(2, tipo);
             ps.setInt(3, cantidad);
@@ -137,16 +145,16 @@ public class CatalogoView {
     private ObservableList<ObservableList<Object>> getDataFromDB() {
         ObservableList<ObservableList<Object>> data = FXCollections.observableArrayList();
         
-        // SQL que calcula todo basándose en la semana actual (Lunes a Sábado)
+        // CORRECCIÓN: Nombres de tabla y columnas según diagrama
         String sql = """
             SELECT 
-                m.id_medicamento, m.nombre, m.descripcion, m.stock_inicial,
+                m.id_medicamento, m.nombre, m.descripcion, m.stock AS stock_inicial,
                 COALESCE(SUM(CASE WHEN mov.tipo = 'ENTRADA' THEN mov.cantidad ELSE 0 END), 0) AS entradas,
                 COALESCE(SUM(CASE WHEN mov.tipo = 'SALIDA' THEN mov.cantidad ELSE 0 END), 0) AS salidas
             FROM medicamentos m
-            LEFT JOIN movimientos mov ON m.id_medicamento = mov.id_medicamento 
-                 AND mov.fecha >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
-            GROUP BY m.id_medicamento
+            LEFT JOIN movimientos_inventario mov ON m.id_medicamento = mov.id_medicamento 
+                 AND mov.fecha >= date_trunc('week', CURRENT_DATE)
+            GROUP BY m.id_medicamento, m.nombre, m.descripcion, m.stock
             ORDER BY m.nombre
         """;
 
@@ -170,13 +178,27 @@ public class CatalogoView {
         return data;
     }
 
+    private void confirmarEliminacion(int id, String nombre) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Confirmar Eliminación");
+        alert.setHeaderText("¿Estás seguro de eliminar este insumo?");
+        alert.setContentText("Se eliminará: " + nombre + "\nEsta acción no se puede deshacer.");
+
+        Optional<ButtonType> result = alert.showAndWait();
+        if (result.isPresent() && result.get() == ButtonType.OK) {
+            eliminarMedicamento(id);
+        }
+    }
+
     private void eliminarMedicamento(int id) {
-        try (Connection conn = ConexionDB.getInstance()) {
-            PreparedStatement ps = conn.prepareStatement("DELETE FROM medicamentos WHERE id_medicamento=?");
+        try (Connection conn = ConexionDB.getInstance();
+             PreparedStatement ps = conn.prepareStatement("DELETE FROM medicamentos WHERE id_medicamento=?")) {
             ps.setInt(1, id);
             ps.executeUpdate();
             actualizarTabla();
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { 
+            new Alert(Alert.AlertType.ERROR, "No se puede eliminar: el producto tiene movimientos registrados.").show();
+        }
     }
 
     private TableColumn<ObservableList<Object>, Object> createColumn(String title, int index, Pos alignment, boolean visible) {
