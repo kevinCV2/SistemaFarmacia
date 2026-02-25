@@ -313,12 +313,9 @@ public class GenerarTicketView {
     }
 
     private void imprimirTicket() {
-        if (contenedorTicketProductos.getChildren().isEmpty()) {
-            new Alert(Alert.AlertType.WARNING, "No hay productos o servicios para generar un ticket.").show();
-            return;
-        }
-
+        // 1. Intentar guardar en la base de datos primero
         if (guardarTicketEnBD()) {
+            // 2. Si se guardó con éxito, proceder con la impresión física
             PrinterJob job = PrinterJob.createPrinterJob();
             if (job != null && job.showPrintDialog(root.getScene().getWindow())) {
                 PageLayout pl = job.getPrinter().createPageLayout(Paper.NA_LETTER, PageOrientation.PORTRAIT, Printer.MarginType.HARDWARE_MINIMUM);
@@ -329,16 +326,82 @@ public class GenerarTicketView {
 
                 if (job.printPage(pl, ticketPaper)) {
                     job.endJob();
+                    // 3. Actualizar el folio para la siguiente venta
+                    obtenerUltimoFolioYDatosCompletos();
+                    new Alert(Alert.AlertType.INFORMATION, "Ticket guardado e impreso correctamente.").show();
                 }
-
                 ticketPaper.getTransforms().remove(s);
                 ticketPaper.setEffect(new DropShadow(15, Color.color(0, 0, 0, 0.5)));
-
-                obtenerUltimoFolioYDatosCompletos();
-                new Alert(Alert.AlertType.INFORMATION, "Ticket guardado con éxito.").show();
             }
         } else {
-            new Alert(Alert.AlertType.ERROR, "Error: No se pudo guardar en la base de datos.").show();
+            new Alert(Alert.AlertType.ERROR, "No se pudo guardar el ticket en la base de datos.").show();
+        }
+    }
+
+    private boolean guardarTicketEnBD() {
+        String sqlTicket = "INSERT INTO tickets (folio, fecha, paciente, direccion, telefono, total) VALUES (?, NOW(), ?, ?, ?, ?) RETURNING id_ticket";
+        String sqlDetalle = "INSERT INTO ticket_details (id_ticket, producto, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?)";
+
+        try (Connection conn = ConexionDB.getInstance()) {
+            conn.setAutoCommit(false); // Iniciar transacción
+
+            try (PreparedStatement psT = conn.prepareStatement(sqlTicket)) {
+                psT.setString(1, txtIdTicket.getText());
+                psT.setString(2, txtPaciente.getText().toUpperCase());
+                psT.setString(3, txtDireccion.getText());
+                psT.setString(4, txtNumero.getText());
+
+                // Calcular total numérico
+                double total = Double.parseDouble(lblTicketTotalNum.getText().replace("$", ""));
+                psT.setDouble(5, total);
+
+                ResultSet rs = psT.executeQuery();
+                if (rs.next()) {
+                    int idGenerado = rs.getInt(1);
+
+                    // Guardar detalles de productos
+                    try (PreparedStatement psD = conn.prepareStatement(sqlDetalle)) {
+                        for (Node n : contenedorProductosFormulario.getChildren()) {
+                            HBox f = (HBox) n;
+                            String prod = ((TextField) f.getChildren().get(0)).getText();
+                            int cant = Integer.parseInt(((TextField) f.getChildren().get(1)).getText());
+                            double precio = Double.parseDouble(((TextField) f.getChildren().get(2)).getText());
+
+                            psD.setInt(1, idGenerado);
+                            psD.setString(2, prod);
+                            psD.setInt(3, cant);
+                            psD.setDouble(4, precio);
+                            psD.setDouble(5, cant * precio);
+                            psD.addBatch();
+                        }
+
+                        // También guardar la sesión como un detalle si existe
+                        for (Node n : contenedorSesionesFormulario.getChildren()) {
+                            HBox f = (HBox) n;
+                            String serv = ((TextField) f.getChildren().get(0)).getText();
+                            double costo = Double.parseDouble(((TextField) f.getChildren().get(1)).getText());
+
+                            psD.setInt(1, idGenerado);
+                            psD.setString(2, serv);
+                            psD.setInt(3, 1);
+                            psD.setDouble(4, costo);
+                            psD.setDouble(5, costo);
+                            psD.addBatch();
+                        }
+
+                        psD.executeBatch();
+                    }
+                }
+                conn.commit(); // Confirmar cambios en la BD
+                return true;
+            } catch (Exception e) {
+                conn.rollback(); // Deshacer si hay error
+                e.printStackTrace();
+                return false;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
         }
     }
 
