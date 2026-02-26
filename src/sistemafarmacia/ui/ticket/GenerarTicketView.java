@@ -84,6 +84,7 @@ public class GenerarTicketView {
         VBox contenidoScroll = new VBox(20);
         contenidoScroll.setPadding(new Insets(0, 10, 0, 0));
 
+        // CARD: DATOS GENERALES
         VBox cardDatos = new VBox(15);
         cardDatos.setStyle("-fx-background-color: #111827; -fx-padding: 20; -fx-background-radius: 10;");
         txtIdTicket = crearTextField("Folio");
@@ -103,6 +104,7 @@ public class GenerarTicketView {
             new Label("Paciente") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, txtPaciente
         );
 
+        // CARD: PRODUCTOS
         VBox cardProductos = new VBox(15);
         cardProductos.setStyle("-fx-background-color: #111827; -fx-padding: 20; -fx-background-radius: 10;");
         contenedorProductosFormulario = new VBox(10);
@@ -115,11 +117,16 @@ public class GenerarTicketView {
             contenedorProductosFormulario
         );
 
+        // CARD: SESIONES / SERVICIOS
         VBox cardSesiones = new VBox(15);
         cardSesiones.setStyle("-fx-background-color: #111827; -fx-padding: 20; -fx-background-radius: 10;");
         contenedorSesionesFormulario = new VBox(10);
+        Button btnAddSesion = new Button("+ Agregar Servicio");
+        btnAddSesion.setStyle("-fx-background-color: #4b5563; -fx-text-fill: white; -fx-cursor: hand;");
+        btnAddSesion.setOnAction(e -> agregarFilaSesionDinamica("", 0.0));
+
         cardSesiones.getChildren().addAll(
-            new Label("Sesión Registrada (No editable)") {{ setStyle("-fx-text-fill: white; -fx-font-weight: bold;"); }},
+            new HBox(new Label("Servicios y Sesiones") {{ setStyle("-fx-text-fill: white; -fx-font-weight: bold;"); }}, new Region() {{ HBox.setHgrow(this, Priority.ALWAYS); }}, btnAddSesion),
             contenedorSesionesFormulario
         );
 
@@ -204,7 +211,6 @@ public class GenerarTicketView {
     }
 
     private void obtenerUltimoFolioYDatosCompletos() {
-        // CORRECCIÓN: Limpiar contenedores para evitar duplicación visual
         if (contenedorProductosFormulario != null) contenedorProductosFormulario.getChildren().clear();
         if (contenedorSesionesFormulario != null) contenedorSesionesFormulario.getChildren().clear();
 
@@ -220,7 +226,7 @@ public class GenerarTicketView {
                 lblTicketMetodoPago.setText(rsS.getString("metodo_pago") != null ? rsS.getString("metodo_pago").toUpperCase() : "EFECTIVO");
                 
                 double costoS = rsS.getDouble("total");
-                agregarFilaSesionEstatica(rsS.getString("consulta").toUpperCase(), costoS);
+                agregarFilaSesionDinamica(rsS.getString("consulta").toUpperCase(), costoS);
 
                 String meds = rsS.getString("medicamentos");
                 if (meds != null && !meds.isEmpty()) {
@@ -285,6 +291,7 @@ public class GenerarTicketView {
                             if (!(n instanceof HBox)) continue;
                             HBox fila = (HBox) n;
                             String descServicio = ((TextField) fila.getChildren().get(0)).getText().trim();
+                            if (descServicio.isEmpty()) continue;
                             double costoServicio = Double.parseDouble(((TextField) fila.getChildren().get(1)).getText().trim());
 
                             psDetalle.setInt(1, idGenerado);
@@ -342,14 +349,14 @@ public class GenerarTicketView {
         }
     }
 
-    // --- Métodos de apoyo UI ---
+    // --- MÉTODOS DE APOYO UI ---
 
     private void agregarFilaProductoDinamica(String nombre, int cant, double precio) {
         HBox fila = new HBox(10);
         TextField tNom = crearTextField("Producto"); tNom.setText(nombre); HBox.setHgrow(tNom, Priority.ALWAYS);
         TextField tCan = crearTextField("Cant"); tCan.setPrefWidth(50); tCan.setText(String.valueOf(cant));
         TextField tPre = crearTextField("Precio"); tPre.setPrefWidth(80); tPre.setText(String.valueOf(precio));
-        Button btnDel = new Button("×"); btnDel.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white;");
+        Button btnDel = new Button("×"); btnDel.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; -fx-cursor: hand;");
         btnDel.setOnAction(e -> { contenedorProductosFormulario.getChildren().remove(fila); actualizarTablaTicket(); });
         
         tNom.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
@@ -361,11 +368,27 @@ public class GenerarTicketView {
         actualizarTablaTicket();
     }
 
-    private void agregarFilaSesionEstatica(String desc, double costo) {
+    private void agregarFilaSesionDinamica(String desc, double costo) {
         HBox fila = new HBox(10);
-        TextField tTipo = crearTextField(""); tTipo.setText(desc); tTipo.setEditable(false); HBox.setHgrow(tTipo, Priority.ALWAYS);
-        TextField tCosto = crearTextField(""); tCosto.setText(String.valueOf(costo)); tCosto.setEditable(false); tCosto.setPrefWidth(100);
-        fila.getChildren().addAll(tTipo, tCosto);
+        TextField tTipo = crearTextField("Servicio/Sesión"); 
+        tTipo.setText(desc); 
+        HBox.setHgrow(tTipo, Priority.ALWAYS);
+        
+        TextField tCosto = crearTextField("Costo"); 
+        tCosto.setText(String.valueOf(costo)); 
+        tCosto.setPrefWidth(100);
+        
+        Button btnDel = new Button("×"); 
+        btnDel.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; -fx-cursor: hand;");
+        btnDel.setOnAction(e -> { 
+            contenedorSesionesFormulario.getChildren().remove(fila); 
+            actualizarTablaTicket(); 
+        });
+
+        tTipo.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
+        tCosto.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
+
+        fila.getChildren().addAll(tTipo, tCosto, btnDel);
         contenedorSesionesFormulario.getChildren().add(fila);
         actualizarTablaTicket();
     }
@@ -377,6 +400,7 @@ public class GenerarTicketView {
         
         boolean tieneProductos = false;
         for (Node n : contenedorProductosFormulario.getChildren()) {
+            if (!(n instanceof HBox)) continue;
             HBox f = (HBox) n;
             String nom = ((TextField) f.getChildren().get(0)).getText();
             if (nom.isEmpty()) continue;
@@ -390,6 +414,7 @@ public class GenerarTicketView {
 
         boolean tieneSesiones = false;
         for (Node n : contenedorSesionesFormulario.getChildren()) {
+            if (!(n instanceof HBox)) continue;
             HBox f = (HBox) n;
             String tipo = ((TextField) f.getChildren().get(0)).getText();
             if (tipo.isEmpty()) continue;
@@ -413,12 +438,39 @@ public class GenerarTicketView {
         contenedorTicketProductos.getChildren().add(lbl);
     }
 
+    /**
+     * MÉTODO ACTUALIZADO: Soporta nombres largos con WrapText (Doble fila)
+     */
     private HBox crearFilaTicketUI(String nombre, int cant, double total) {
-        HBox row = new HBox(); row.setAlignment(Pos.CENTER_LEFT);
-        Label lN = new Label(nombre.toUpperCase()); lN.setPrefWidth(180); lN.setFont(Font.font("Courier New", FontWeight.BOLD, 14)); lN.setStyle("-fx-text-fill: black;");
-        Label lC = new Label(String.valueOf(cant)); lC.setPrefWidth(40); lC.setAlignment(Pos.CENTER); lC.setFont(Font.font("Courier New", FontWeight.BOLD, 14)); lC.setStyle("-fx-text-fill: black;");
-        Label lP = new Label(String.format("$%.2f", total)); lP.setPrefWidth(100); lP.setAlignment(Pos.CENTER_RIGHT); lP.setFont(Font.font("Courier New", FontWeight.BOLD, 14)); lP.setStyle("-fx-text-fill: black;");
+        HBox row = new HBox(); 
+        row.setAlignment(Pos.TOP_LEFT); // Alineado arriba para que no flote si hay 2 líneas
+        row.setSpacing(5);
+        row.setPadding(new Insets(2, 0, 2, 0));
+
+        // Descripción con ajuste automático de texto
+        Label lN = new Label(nombre.toUpperCase()); 
+        lN.setPrefWidth(180); 
+        lN.setMaxWidth(180);
+        lN.setWrapText(true); // <--- ESTO ACTIVA LA DOBLE FILA
+        lN.setFont(Font.font("Courier New", FontWeight.BOLD, 13)); 
+        lN.setStyle("-fx-text-fill: black;");
+
+        // Cantidad (Alineado arriba)
+        Label lC = new Label(String.valueOf(cant)); 
+        lC.setPrefWidth(40); 
+        lC.setAlignment(Pos.TOP_CENTER); 
+        lC.setFont(Font.font("Courier New", FontWeight.BOLD, 13)); 
+        lC.setStyle("-fx-text-fill: black;");
+
+        // Costo Total (Alineado arriba a la derecha)
+        Label lP = new Label(String.format("$%.2f", total)); 
+        lP.setPrefWidth(100); 
+        lP.setAlignment(Pos.TOP_RIGHT); 
+        lP.setFont(Font.font("Courier New", FontWeight.BOLD, 13)); 
+        lP.setStyle("-fx-text-fill: black;");
+
         row.getChildren().addAll(lN, lC, lP);
+        row.setMinHeight(Region.USE_COMPUTED_SIZE); 
         return row;
     }
 
