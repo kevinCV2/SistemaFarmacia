@@ -111,18 +111,36 @@ public class SesionesView {
         ContextMenu suggestionsMenu = new ContextMenu();
 
         txtBuscadorMeds.textProperty().addListener((obs, old, nv) -> {
-            if (nv.isEmpty()) { suggestionsMenu.hide(); return; }
+            if (nv.isEmpty()) {
+                suggestionsMenu.hide();
+                return;
+            }
             suggestionsMenu.getItems().clear();
-            try (Connection conn = ConexionDB.getInstance();
-                 PreparedStatement ps = conn.prepareStatement("SELECT nombre FROM medicamentos WHERE nombre ILIKE ? LIMIT 5")) {
+
+            // Unificamos ambas tablas en la consulta
+            String sql = "SELECT nombre FROM ("
+                    + "  SELECT nombre FROM medicamentos "
+                    + "  UNION ALL "
+                    + "  SELECT nombre FROM insumos"
+                    + ") AS tablas_unidas "
+                    + "WHERE nombre ILIKE ? "
+                    + "LIMIT 8";
+
+            try (Connection conn = ConexionDB.getInstance(); PreparedStatement ps = conn.prepareStatement(sql)) {
+
                 ps.setString(1, "%" + nv + "%");
                 ResultSet rs = ps.executeQuery();
+
                 while (rs.next()) {
                     String n = rs.getString("nombre");
                     MenuItem item = new MenuItem(n);
+
+                    // Estilo del item para que sea legible sobre el fondo oscuro
+                    item.setStyle("-fx-text-fill: black; -fx-font-weight: bold;");
+
                     item.setOnAction(e -> {
                         if (medsSeleccionadosSet.contains(n)) {
-                            new Alert(Alert.AlertType.INFORMATION, "Este medicamento ya ha sido añadido.").show();
+                            new Alert(Alert.AlertType.INFORMATION, "Este ítem ya ha sido añadido.").show();
                         } else {
                             medsSeleccionadosSet.add(n);
                             lblListaMeds.setText("Seleccionados: " + String.join(", ", medsSeleccionadosSet));
@@ -132,8 +150,16 @@ public class SesionesView {
                     });
                     suggestionsMenu.getItems().add(item);
                 }
-                if (!suggestionsMenu.getItems().isEmpty()) suggestionsMenu.show(txtBuscadorMeds, Side.BOTTOM, 0, 0);
-            } catch (Exception ex) { ex.printStackTrace(); }
+
+                if (!suggestionsMenu.getItems().isEmpty()) {
+                    // Ajuste de posición para que no tape el input
+                    suggestionsMenu.show(txtBuscadorMeds, Side.BOTTOM, 0, 0);
+                } else {
+                    suggestionsMenu.hide();
+                }
+            } catch (Exception ex) {
+                System.err.println("Error buscando en tablas unificadas: " + ex.getMessage());
+            }
         });
 
         Button btnLimpiar = new Button("Limpiar Medicamentos");

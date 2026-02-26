@@ -2,6 +2,7 @@ package sistemafarmacia.ui.ticket;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.geometry.Side;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.effect.DropShadow;
@@ -51,7 +52,6 @@ public class GenerarTicketView {
         root = new BorderPane();
         root.setStyle("-fx-background-color: #1f2933;");
 
-        // Barra superior
         HBox topBar = new HBox(20);
         topBar.setPadding(new Insets(15, 20, 15, 20));
         topBar.setAlignment(Pos.CENTER_LEFT);
@@ -89,8 +89,10 @@ public class GenerarTicketView {
         txtIdTicket = crearTextField("Folio");
         txtIdTicket.setEditable(false);
         txtDireccion = crearTextField("");
+        txtDireccion.setPromptText("Ingrese dirección");
         txtDireccion.textProperty().addListener((obs, old, nv) -> lblTicketDireccion.setText(nv));
         txtNumero = crearTextField("");
+        txtNumero.setPromptText("Ingrese teléfono");
         txtNumero.textProperty().addListener((obs, old, nv) -> lblTicketNumero.setText(nv.isEmpty() ? "" : "TEL: " + nv));
         txtPaciente = crearTextField("Nombre del Paciente");
         txtPaciente.textProperty().addListener((obs, old, nv) -> lblTicketPacienteValor.setText(nv.isEmpty() ? "MOSTRADOR" : nv.toUpperCase()));
@@ -106,20 +108,24 @@ public class GenerarTicketView {
         VBox cardProductos = new VBox(15);
         cardProductos.setStyle("-fx-background-color: #111827; -fx-padding: 20; -fx-background-radius: 10;");
         contenedorProductosFormulario = new VBox(10);
-        Button btnAddProd = new Button("+ Agregar Producto");
+        Button btnAddProd = new Button("+ Agregar Producto/Insumo");
         btnAddProd.setStyle("-fx-background-color: #4b5563; -fx-text-fill: white; -fx-cursor: hand;");
         btnAddProd.setOnAction(e -> agregarFilaProductoDinamica("", 1, 0.0));
         
         cardProductos.getChildren().addAll(
-            new HBox(new Label("Medicamentos") {{ setStyle("-fx-text-fill: white; -fx-font-weight: bold;"); }}, new Region() {{ HBox.setHgrow(this, Priority.ALWAYS); }}, btnAddProd),
+            new HBox(new Label("Artículos e Insumos") {{ setStyle("-fx-text-fill: white; -fx-font-weight: bold;"); }}, new Region() {{ HBox.setHgrow(this, Priority.ALWAYS); }}, btnAddProd),
             contenedorProductosFormulario
         );
 
         VBox cardSesiones = new VBox(15);
         cardSesiones.setStyle("-fx-background-color: #111827; -fx-padding: 20; -fx-background-radius: 10;");
         contenedorSesionesFormulario = new VBox(10);
+        Button btnAddSesion = new Button("+ Agregar Servicio");
+        btnAddSesion.setStyle("-fx-background-color: #4b5563; -fx-text-fill: white; -fx-cursor: hand;");
+        btnAddSesion.setOnAction(e -> agregarFilaSesionDinamica("", 0.0));
+
         cardSesiones.getChildren().addAll(
-            new Label("Sesión Registrada (No editable)") {{ setStyle("-fx-text-fill: white; -fx-font-weight: bold;"); }},
+            new HBox(new Label("Servicios y Sesiones") {{ setStyle("-fx-text-fill: white; -fx-font-weight: bold;"); }}, new Region() {{ HBox.setHgrow(this, Priority.ALWAYS); }}, btnAddSesion),
             contenedorSesionesFormulario
         );
 
@@ -136,6 +142,111 @@ public class GenerarTicketView {
         panelPrincipal.getChildren().addAll(scroll, btnImprimir);
         VBox.setVgrow(scroll, Priority.ALWAYS);
         return panelPrincipal;
+    }
+
+    private void agregarFilaProductoDinamica(String nombre, int cant, double precio) {
+        HBox fila = new HBox(10);
+        fila.setAlignment(Pos.CENTER_LEFT);
+
+        TextField tNom = crearTextField("Producto / Insumo"); 
+        tNom.setText(nombre); 
+        HBox.setHgrow(tNom, Priority.ALWAYS);
+        
+        TextField tCan = crearTextField("Cant"); 
+        tCan.setPrefWidth(50); 
+        tCan.setText(String.valueOf(cant));
+        
+        TextField tPre = crearTextField("Precio"); 
+        tPre.setPrefWidth(80); 
+        tPre.setText(String.valueOf(precio));
+
+        ContextMenu suggestionsMenu = new ContextMenu();
+        tNom.textProperty().addListener((obs, old, nv) -> {
+            if (nv.isEmpty()) { suggestionsMenu.hide(); return; }
+            suggestionsMenu.getItems().clear();
+
+            String sql = "SELECT nombre, precio FROM (" +
+                         "  SELECT nombre, precio FROM public.medicamentos " +
+                         "  UNION ALL " +
+                         "  SELECT nombre, precio FROM public.insumos " +
+                         ") AS todo WHERE nombre ILIKE ? LIMIT 10";
+
+            try (Connection conn = ConexionDB.getInstance(); PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, "%" + nv + "%");
+                ResultSet rs = ps.executeQuery();
+                while (rs.next()) {
+                    String n = rs.getString("nombre");
+                    double p = rs.getDouble("precio");
+                    MenuItem item = new MenuItem(n + " ($" + p + ")");
+                    item.setStyle("-fx-text-fill: black; -fx-font-weight: bold;");
+                    item.setOnAction(e -> {
+                        tNom.setText(n);
+                        tPre.setText(String.valueOf(p));
+                        actualizarTablaTicket();
+                        suggestionsMenu.hide();
+                    });
+                    suggestionsMenu.getItems().add(item);
+                }
+                if (!suggestionsMenu.getItems().isEmpty()) {
+                    suggestionsMenu.show(tNom, Side.BOTTOM, 0, 0);
+                } else {
+                    suggestionsMenu.hide();
+                }
+            } catch (Exception ex) { ex.printStackTrace(); }
+        });
+
+        Button btnDel = new Button("×"); 
+        btnDel.setMinWidth(32);
+        btnDel.setPrefWidth(32);
+        btnDel.setMaxWidth(32);
+        btnDel.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;");
+        btnDel.setOnAction(e -> { 
+            contenedorProductosFormulario.getChildren().remove(fila); 
+            actualizarTablaTicket(); 
+        });
+        
+        tNom.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
+        tCan.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
+        tPre.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
+        
+        fila.getChildren().addAll(tNom, tCan, tPre, btnDel);
+        contenedorProductosFormulario.getChildren().add(fila);
+        actualizarTablaTicket();
+    }
+
+    private void actualizarTablaTicket() {
+        if (contenedorTicketProductos == null || lblTicketTotalNum == null) return;
+        contenedorTicketProductos.getChildren().clear();
+        double granTotal = 0.0;
+
+        for (Node n : contenedorProductosFormulario.getChildren()) {
+            if (!(n instanceof HBox)) continue;
+            HBox f = (HBox) n;
+            String nom = ((TextField) f.getChildren().get(0)).getText().trim();
+            if (nom.isEmpty()) continue;
+
+            int can = 1; double pre = 0.0;
+            try { can = Integer.parseInt(((TextField) f.getChildren().get(1)).getText()); } catch (Exception e) {}
+            try { pre = Double.parseDouble(((TextField) f.getChildren().get(2)).getText()); } catch (Exception e) {}
+
+            double subtotal = can * pre;
+            granTotal += subtotal;
+            contenedorTicketProductos.getChildren().add(crearFilaTicketUI(nom, can, subtotal));
+        }
+
+        for (Node n : contenedorSesionesFormulario.getChildren()) {
+            if (!(n instanceof HBox)) continue;
+            HBox f = (HBox) n;
+            String tipo = ((TextField) f.getChildren().get(0)).getText().trim();
+            if (tipo.isEmpty()) continue;
+
+            double costo = 0.0;
+            try { costo = Double.parseDouble(((TextField) f.getChildren().get(1)).getText()); } catch (Exception e) {}
+            granTotal += costo;
+            contenedorTicketProductos.getChildren().add(crearFilaTicketUI(tipo, 1, costo));
+        }
+
+        lblTicketTotalNum.setText(String.format("$%.2f", granTotal));
     }
 
     private void construirDisenoTicket() {
@@ -204,7 +315,6 @@ public class GenerarTicketView {
     }
 
     private void obtenerUltimoFolioYDatosCompletos() {
-        // CORRECCIÓN: Limpiar contenedores para evitar duplicación visual
         if (contenedorProductosFormulario != null) contenedorProductosFormulario.getChildren().clear();
         if (contenedorSesionesFormulario != null) contenedorSesionesFormulario.getChildren().clear();
 
@@ -212,60 +322,73 @@ public class GenerarTicketView {
             ResultSet rsF = stmt.executeQuery("SELECT MAX(id_ticket) FROM public.tickets");
             if (rsF.next()) contadorTicket = rsF.getInt(1) + 1;
             String f = String.format("%06d", contadorTicket);
-            txtIdTicket.setText(f); lblTicketIdValor.setText(f);
-            
+            txtIdTicket.setText(f);
+            lblTicketIdValor.setText(f);
+
             ResultSet rsS = stmt.executeQuery("SELECT * FROM public.sesiones ORDER BY id_sesion DESC LIMIT 1");
             if (rsS.next()) {
                 txtPaciente.setText(rsS.getString("paciente"));
-                lblTicketMetodoPago.setText(rsS.getString("metodo_pago") != null ? rsS.getString("metodo_pago").toUpperCase() : "EFECTIVO");
-                
-                double costoS = rsS.getDouble("total");
-                agregarFilaSesionEstatica(rsS.getString("consulta").toUpperCase(), costoS);
+                String met = rsS.getString("estado_pago");
+                lblTicketMetodoPago.setText(met != null ? met.toUpperCase() : "EFECTIVO");
 
-                String meds = rsS.getString("medicamentos");
-                if (meds != null && !meds.isEmpty()) {
-                    String[] medsArray = meds.split(",");
-                    for (String m : medsArray) {
-                        String nombre = m.trim();
-                        if(nombre.isEmpty()) continue;
-                        double precio = buscarPrecioMedicamento(nombre);
-                        agregarFilaProductoDinamica(nombre, 1, precio);
+                agregarFilaSesionDinamica(rsS.getString("consulta").toUpperCase(), rsS.getDouble("total"));
+
+                String medsStr = rsS.getString("medicamentos");
+                if (medsStr != null && !medsStr.isEmpty()) {
+                    for (String m : medsStr.split(",")) {
+                        String nLimpio = m.trim();
+                        if (!nLimpio.isEmpty()) {
+                            double precioEncontrado = buscarPrecioCualquierTabla(nLimpio);
+                            agregarFilaProductoDinamica(nLimpio.toUpperCase(), 1, precioEncontrado);
+                        }
                     }
                 }
             }
         } catch (Exception e) { e.printStackTrace(); }
     }
 
+    private double buscarPrecioCualquierTabla(String nombre) {
+        String sql = "SELECT precio FROM public.medicamentos WHERE nombre ILIKE ? " +
+                     "UNION ALL " +
+                     "SELECT precio FROM public.insumos WHERE nombre ILIKE ? LIMIT 1";
+        try (Connection conn = ConexionDB.getInstance(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            String param = "%" + nombre.trim() + "%";
+            ps.setString(1, param);
+            ps.setString(2, param);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return rs.getDouble("precio");
+        } catch (Exception e) { e.printStackTrace(); }
+        return 0.0;
+    }
+
     private boolean guardarTicketEnBD() {
         String insertTicket = "INSERT INTO public.tickets (folio, fecha, paciente, direccion, telefono, total) VALUES (?, NOW(), ?, ?, ?, ?) RETURNING id_ticket";
         String insertDetalle = "INSERT INTO public.ticket_detalles (id_ticket, producto, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?)";
-        String updateStock = "UPDATE public.medicamentos SET stock = stock - ? WHERE nombre = ?";
+        String updateStockMed = "UPDATE public.medicamentos SET stock = stock - ? WHERE nombre ILIKE ?";
+        String updateStockIns = "UPDATE public.insumos SET stock = stock - ? WHERE nombre ILIKE ?";
 
         try (Connection conn = ConexionDB.getInstance()) {
-            conn.setAutoCommit(false); 
-
+            conn.setAutoCommit(false);
             try (PreparedStatement psTicket = conn.prepareStatement(insertTicket)) {
-                psTicket.setString(1, txtIdTicket.getText()); 
-                psTicket.setString(2, txtPaciente.getText().toUpperCase()); 
-                psTicket.setString(3, txtDireccion.getText()); 
-                psTicket.setString(4, txtNumero.getText()); 
-
+                psTicket.setString(1, txtIdTicket.getText());
+                psTicket.setString(2, txtPaciente.getText().toUpperCase());
+                psTicket.setString(3, txtDireccion.getText());
+                psTicket.setString(4, txtNumero.getText());
                 double totalVal = Double.parseDouble(lblTicketTotalNum.getText().replace("$", "").trim());
                 psTicket.setDouble(5, totalVal);
 
                 ResultSet rs = psTicket.executeQuery();
                 if (rs.next()) {
-                    int idGenerado = rs.getInt(1); 
-
+                    int idGenerado = rs.getInt(1);
                     try (PreparedStatement psDetalle = conn.prepareStatement(insertDetalle); 
-                         PreparedStatement psStock = conn.prepareStatement(updateStock)) {
+                         PreparedStatement psStockMed = conn.prepareStatement(updateStockMed); 
+                         PreparedStatement psStockIns = conn.prepareStatement(updateStockIns)) {
 
                         for (Node n : contenedorProductosFormulario.getChildren()) {
                             if (!(n instanceof HBox)) continue;
                             HBox fila = (HBox) n;
                             String nombre = ((TextField) fila.getChildren().get(0)).getText().trim();
                             if (nombre.isEmpty()) continue;
-
                             int cant = Integer.parseInt(((TextField) fila.getChildren().get(1)).getText().trim());
                             double precio = Double.parseDouble(((TextField) fila.getChildren().get(2)).getText().trim());
 
@@ -276,40 +399,35 @@ public class GenerarTicketView {
                             psDetalle.setDouble(5, cant * precio);
                             psDetalle.addBatch();
 
-                            psStock.setInt(1, cant);
-                            psStock.setString(2, nombre);
-                            psStock.addBatch();
-                        }
+                            psStockMed.setInt(1, cant);
+                            psStockMed.setString(2, nombre);
+                            psStockMed.addBatch();
 
+                            psStockIns.setInt(1, cant);
+                            psStockIns.setString(2, nombre);
+                            psStockIns.addBatch();
+                        }
                         for (Node n : contenedorSesionesFormulario.getChildren()) {
                             if (!(n instanceof HBox)) continue;
                             HBox fila = (HBox) n;
-                            String descServicio = ((TextField) fila.getChildren().get(0)).getText().trim();
-                            double costoServicio = Double.parseDouble(((TextField) fila.getChildren().get(1)).getText().trim());
-
+                            String desc = ((TextField) fila.getChildren().get(0)).getText().trim();
+                            double costo = Double.parseDouble(((TextField) fila.getChildren().get(1)).getText().trim());
                             psDetalle.setInt(1, idGenerado);
-                            psDetalle.setString(2, descServicio);
-                            psDetalle.setInt(3, 1); 
-                            psDetalle.setDouble(4, costoServicio);
-                            psDetalle.setDouble(5, costoServicio);
+                            psDetalle.setString(2, desc);
+                            psDetalle.setInt(3, 1);
+                            psDetalle.setDouble(4, costo);
+                            psDetalle.setDouble(5, costo);
                             psDetalle.addBatch();
                         }
-
                         psDetalle.executeBatch();
-                        psStock.executeBatch();
+                        psStockMed.executeBatch();
+                        psStockIns.executeBatch();
                     }
                 }
-                conn.commit(); 
+                conn.commit();
                 return true;
-            } catch (Exception e) {
-                conn.rollback(); 
-                e.printStackTrace();
-                return false;
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
+            } catch (Exception e) { conn.rollback(); e.printStackTrace(); return false; }
+        } catch (Exception e) { e.printStackTrace(); return false; }
     }
 
     private void imprimirTicket() {
@@ -317,7 +435,6 @@ public class GenerarTicketView {
             new Alert(Alert.AlertType.WARNING, "No hay productos o servicios para generar un ticket.").show();
             return;
         }
-
         if (guardarTicketEnBD()) {
             PrinterJob job = PrinterJob.createPrinterJob();
             if (job != null && job.showPrintDialog(root.getScene().getWindow())) {
@@ -326,14 +443,9 @@ public class GenerarTicketView {
                 double scale = pl.getPrintableWidth() / ticketPaper.getWidth();
                 Scale s = new Scale(scale, scale);
                 ticketPaper.getTransforms().add(s);
-
-                if (job.printPage(pl, ticketPaper)) {
-                    job.endJob();
-                }
-
+                if (job.printPage(pl, ticketPaper)) { job.endJob(); }
                 ticketPaper.getTransforms().remove(s);
                 ticketPaper.setEffect(new DropShadow(15, Color.color(0, 0, 0, 0.5)));
-
                 obtenerUltimoFolioYDatosCompletos();
                 new Alert(Alert.AlertType.INFORMATION, "Ticket guardado con éxito.").show();
             }
@@ -342,94 +454,33 @@ public class GenerarTicketView {
         }
     }
 
-    // --- Métodos de apoyo UI ---
-
-    private void agregarFilaProductoDinamica(String nombre, int cant, double precio) {
+    private void agregarFilaSesionDinamica(String desc, double costo) {
         HBox fila = new HBox(10);
-        TextField tNom = crearTextField("Producto"); tNom.setText(nombre); HBox.setHgrow(tNom, Priority.ALWAYS);
-        TextField tCan = crearTextField("Cant"); tCan.setPrefWidth(50); tCan.setText(String.valueOf(cant));
-        TextField tPre = crearTextField("Precio"); tPre.setPrefWidth(80); tPre.setText(String.valueOf(precio));
-        Button btnDel = new Button("×"); btnDel.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white;");
-        btnDel.setOnAction(e -> { contenedorProductosFormulario.getChildren().remove(fila); actualizarTablaTicket(); });
-        
-        tNom.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
-        tCan.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
-        tPre.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
-        
-        fila.getChildren().addAll(tNom, tCan, tPre, btnDel);
-        contenedorProductosFormulario.getChildren().add(fila);
-        actualizarTablaTicket();
-    }
-
-    private void agregarFilaSesionEstatica(String desc, double costo) {
-        HBox fila = new HBox(10);
-        TextField tTipo = crearTextField(""); tTipo.setText(desc); tTipo.setEditable(false); HBox.setHgrow(tTipo, Priority.ALWAYS);
-        TextField tCosto = crearTextField(""); tCosto.setText(String.valueOf(costo)); tCosto.setEditable(false); tCosto.setPrefWidth(100);
-        fila.getChildren().addAll(tTipo, tCosto);
+        TextField tTipo = crearTextField("Servicio/Sesión"); tTipo.setText(desc); HBox.setHgrow(tTipo, Priority.ALWAYS);
+        TextField tCosto = crearTextField("Costo"); tCosto.setText(String.valueOf(costo)); tCosto.setPrefWidth(100);
+        Button btnDel = new Button("×");
+        btnDel.setMinWidth(32);
+        btnDel.setPrefWidth(32);
+        btnDel.setMaxWidth(32);
+        btnDel.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;");
+        btnDel.setOnAction(e -> { contenedorSesionesFormulario.getChildren().remove(fila); actualizarTablaTicket(); });
+        tTipo.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
+        tCosto.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
+        fila.getChildren().addAll(tTipo, tCosto, btnDel);
         contenedorSesionesFormulario.getChildren().add(fila);
         actualizarTablaTicket();
     }
 
-    private void actualizarTablaTicket() {
-        if (contenedorTicketProductos == null || lblTicketTotalNum == null) return;
-        contenedorTicketProductos.getChildren().clear();
-        double granTotal = 0.0;
-        
-        boolean tieneProductos = false;
-        for (Node n : contenedorProductosFormulario.getChildren()) {
-            HBox f = (HBox) n;
-            String nom = ((TextField) f.getChildren().get(0)).getText();
-            if (nom.isEmpty()) continue;
-            if (!tieneProductos) { agregarEncabezadoSeccion("PRODUCTOS / MEDICAMENTOS"); tieneProductos = true; }
-            int can = 1; double pre = 0.0;
-            try { can = Integer.parseInt(((TextField) f.getChildren().get(1)).getText()); } catch (Exception e) {}
-            try { pre = Double.parseDouble(((TextField) f.getChildren().get(2)).getText()); } catch (Exception e) {}
-            double subtotal = can * pre; granTotal += subtotal;
-            contenedorTicketProductos.getChildren().add(crearFilaTicketUI(nom, can, subtotal));
-        }
-
-        boolean tieneSesiones = false;
-        for (Node n : contenedorSesionesFormulario.getChildren()) {
-            HBox f = (HBox) n;
-            String tipo = ((TextField) f.getChildren().get(0)).getText();
-            if (tipo.isEmpty()) continue;
-            if (!tieneSesiones) { 
-                if (tieneProductos) contenedorTicketProductos.getChildren().add(new Label(" "));
-                agregarEncabezadoSeccion("SERVICIOS / SESIONES"); tieneSesiones = true; 
-            }
-            double costo = 0.0;
-            try { costo = Double.parseDouble(((TextField) f.getChildren().get(1)).getText()); } catch (Exception e) {}
-            granTotal += costo;
-            contenedorTicketProductos.getChildren().add(crearFilaTicketUI(tipo, 1, costo));
-        }
-        lblTicketTotalNum.setText(String.format("$%.2f", granTotal));
-    }
-
-    private void agregarEncabezadoSeccion(String texto) {
-        Label lbl = new Label(texto);
-        lbl.setFont(Font.font("Courier New", FontWeight.BOLD, 12));
-        lbl.setStyle("-fx-text-fill: black; -fx-border-color: black; -fx-border-width: 0 0 1 0;");
-        lbl.setPrefWidth(320);
-        contenedorTicketProductos.getChildren().add(lbl);
-    }
-
     private HBox crearFilaTicketUI(String nombre, int cant, double total) {
-        HBox row = new HBox(); row.setAlignment(Pos.CENTER_LEFT);
-        Label lN = new Label(nombre.toUpperCase()); lN.setPrefWidth(180); lN.setFont(Font.font("Courier New", FontWeight.BOLD, 14)); lN.setStyle("-fx-text-fill: black;");
-        Label lC = new Label(String.valueOf(cant)); lC.setPrefWidth(40); lC.setAlignment(Pos.CENTER); lC.setFont(Font.font("Courier New", FontWeight.BOLD, 14)); lC.setStyle("-fx-text-fill: black;");
-        Label lP = new Label(String.format("$%.2f", total)); lP.setPrefWidth(100); lP.setAlignment(Pos.CENTER_RIGHT); lP.setFont(Font.font("Courier New", FontWeight.BOLD, 14)); lP.setStyle("-fx-text-fill: black;");
+        HBox row = new HBox(); row.setAlignment(Pos.TOP_LEFT); row.setSpacing(5); row.setPadding(new Insets(2, 0, 2, 0));
+        Label lN = new Label(nombre.toUpperCase()); lN.setPrefWidth(180); lN.setMaxWidth(180); lN.setWrapText(true);
+        lN.setFont(Font.font("Courier New", FontWeight.BOLD, 13)); lN.setStyle("-fx-text-fill: black;");
+        Label lC = new Label(String.valueOf(cant)); lC.setPrefWidth(40); lC.setAlignment(Pos.TOP_CENTER); 
+        lC.setFont(Font.font("Courier New", FontWeight.BOLD, 13)); lC.setStyle("-fx-text-fill: black;");
+        Label lP = new Label(String.format("$%.2f", total)); lP.setPrefWidth(100); lP.setAlignment(Pos.TOP_RIGHT); 
+        lP.setFont(Font.font("Courier New", FontWeight.BOLD, 13)); lP.setStyle("-fx-text-fill: black;");
         row.getChildren().addAll(lN, lC, lP);
         return row;
-    }
-
-    private double buscarPrecioMedicamento(String nombre) {
-        try (Connection conn = ConexionDB.getInstance();
-             PreparedStatement ps = conn.prepareStatement("SELECT precio FROM public.medicamentos WHERE nombre ILIKE ? LIMIT 1")) {
-            ps.setString(1, nombre);
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) return rs.getDouble("precio");
-        } catch (Exception e) { e.printStackTrace(); }
-        return 0.0;
     }
 
     private VBox crearPanelTicket() {

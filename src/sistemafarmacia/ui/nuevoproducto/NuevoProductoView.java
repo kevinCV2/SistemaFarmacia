@@ -24,6 +24,7 @@ public class NuevoProductoView {
     private TextField txtNombre, txtPrecio, txtStock;
     private TextArea txtDescripcion;
     private ComboBox<String> comboCategoria;
+    private ComboBox<String> comboTipo; // NUEVO
 
     public NuevoProductoView(Runnable actionVolver) {
         this.actionVolver = actionVolver;
@@ -34,22 +35,19 @@ public class NuevoProductoView {
         root = new BorderPane();
         root.setStyle("-fx-background-color: #0f172a;");
 
-        // --- CONTENEDOR PRINCIPAL CON SCROLL ---
         ScrollPane scrollPane = new ScrollPane();
-        scrollPane.setFitToWidth(true); // Se ajusta al ancho de la ventana
+        scrollPane.setFitToWidth(true);
         scrollPane.setStyle("-fx-background: #0f172a; -fx-background-color: transparent; -fx-border-color: transparent;");
         
         VBox content = new VBox(30);
         content.setPadding(new Insets(40));
-        content.setAlignment(Pos.TOP_CENTER); // Centrar contenido horizontalmente
+        content.setAlignment(Pos.TOP_CENTER);
 
-        // Título
         Label titulo = new Label("Registrar Nuevo Producto");
         titulo.setFont(Font.font("System Bold", 32));
         titulo.setTextFill(Color.WHITE);
 
-        // Inicializar campos
-        txtNombre = crearTextField("Nombre del Medicamento", 400, 30);
+        txtNombre = crearTextField("Nombre del Producto", 400, 30);
 
         txtDescripcion = new TextArea();
         txtDescripcion.setPromptText("Descripción detallada...");
@@ -65,6 +63,14 @@ public class NuevoProductoView {
             "-fx-font-size: 14;"
         );
 
+        // NUEVO Combo Tipo
+        comboTipo = new ComboBox<>();
+        comboTipo.getItems().addAll("Medicamento", "Insumo", "Filtro");
+        comboTipo.setPromptText("Seleccione Tipo de Producto");
+        comboTipo.setPrefWidth(400);
+        comboTipo.setMaxWidth(400);
+        comboTipo.setStyle("-fx-background-color: #1e293b; -fx-text-fill: white; -fx-font-size: 14;");
+
         comboCategoria = new ComboBox<>();
         comboCategoria.setPromptText("Seleccione Categoría");
         comboCategoria.setPrefWidth(400);
@@ -75,13 +81,16 @@ public class NuevoProductoView {
         txtPrecio = crearTextField("Precio (ej: 10.50)", 400, 30);
         txtStock = crearTextField("Cantidad inicial", 400, 30);
 
-        // Formulario en Grid
         GridPane grid = new GridPane();
         grid.setVgap(15);
         grid.setHgap(20);
         grid.setAlignment(Pos.CENTER);
 
         int row = 0;
+
+        grid.add(crearLabel("Tipo de Producto:"), 0, row++);
+        grid.add(comboTipo, 0, row++);
+
         grid.add(crearLabel("Nombre:"), 0, row++);
         grid.add(txtNombre, 0, row++);
         
@@ -97,7 +106,6 @@ public class NuevoProductoView {
         grid.add(crearLabel("Stock:"), 0, row++);
         grid.add(txtStock, 0, row++);
 
-        // Botones
         Button btnGuardar = new Button("Confirmar Registro");
         btnGuardar.setStyle("-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 16; -fx-padding: 12 25; -fx-cursor: hand;");
 
@@ -113,10 +121,8 @@ public class NuevoProductoView {
         botones.setAlignment(Pos.CENTER);
         botones.setPadding(new Insets(20, 0, 0, 0));
 
-        // Unir todo en el VBox
         content.getChildren().addAll(titulo, grid, botones);
         
-        // Asignar el contenido al ScrollPane
         scrollPane.setContent(content);
         root.setCenter(scrollPane);
     }
@@ -136,11 +142,20 @@ public class NuevoProductoView {
     }
 
     private boolean validarCampos() {
-        if (txtNombre.getText().isEmpty() || comboCategoria.getValue() == null ||
-            txtPrecio.getText().isEmpty() || txtStock.getText().isEmpty()) {
+        if (comboTipo.getValue() == null ||
+            txtNombre.getText().isEmpty() ||
+            txtPrecio.getText().isEmpty() ||
+            txtStock.getText().isEmpty()) {
+
             new Alert(Alert.AlertType.WARNING, "Por favor complete todos los campos").show();
             return false;
         }
+
+        if (!comboTipo.getValue().equals("Filtro") && comboCategoria.getValue() == null) {
+            new Alert(Alert.AlertType.WARNING, "Seleccione una categoría").show();
+            return false;
+        }
+
         try {
             Double.parseDouble(txtPrecio.getText());
             Integer.parseInt(txtStock.getText());
@@ -148,35 +163,80 @@ public class NuevoProductoView {
             new Alert(Alert.AlertType.ERROR, "Precio y Stock deben ser números válidos").show();
             return false;
         }
+
         return true;
     }
 
     private boolean guardarEnBD() {
         try (Connection conn = ConexionDB.getInstance()) {
-            // Obtener ID de categoría
-            String sqlCat = "SELECT id_categoria FROM categorias WHERE nombre = ?";
-            PreparedStatement psCat = conn.prepareStatement(sqlCat);
-            psCat.setString(1, comboCategoria.getValue());
-            ResultSet rs = psCat.executeQuery();
 
-            int idCat = rs.next() ? rs.getInt("id_categoria") : 0;
+            String tipo = comboTipo.getValue();
+            int idCat = 0;
 
-            // Insertar producto (sin fecha_vencimiento)
-            String sql = "INSERT INTO medicamentos (nombre, descripcion, id_categoria, precio, stock) VALUES (?, ?, ?, ?, ?)";
-            PreparedStatement ps = conn.prepareStatement(sql);
-            ps.setString(1, txtNombre.getText());
-            ps.setString(2, txtDescripcion.getText());
-            ps.setInt(3, idCat);
-            ps.setDouble(4, Double.parseDouble(txtPrecio.getText()));
-            ps.setInt(5, Integer.parseInt(txtStock.getText()));
+            // Si es Filtro, usamos automáticamente la categoría "Filtros"
+            if (tipo.equals("Filtro")) {
+                String sqlCat = "SELECT id_categoria FROM categorias WHERE nombre ILIKE 'Filtros'";
+                PreparedStatement psCat = conn.prepareStatement(sqlCat);
+                ResultSet rs = psCat.executeQuery();
+                if (rs.next()) {
+                    idCat = rs.getInt("id_categoria");
+                }
 
-            ps.executeUpdate();
+                String sql = "INSERT INTO insumos (nombre, precio, stock, id_categoria, categoria) VALUES (?, ?, ?, ?, ?)";
+                PreparedStatement ps = conn.prepareStatement(sql);
+
+                ps.setString(1, txtNombre.getText());
+                ps.setDouble(2, Double.parseDouble(txtPrecio.getText()));
+                ps.setInt(3, Integer.parseInt(txtStock.getText()));
+                ps.setInt(4, idCat);
+                ps.setString(5, "Filtros");
+
+                ps.executeUpdate();
+            } else if (tipo.equals("Medicamento")) {
+
+                idCat = obtenerIdCategoria(conn);
+
+                String sql = "INSERT INTO insumos (nombre, precio, stock, id_categoria, categoria) VALUES (?, ?, ?, ?, ?)";
+                PreparedStatement ps = conn.prepareStatement(sql);
+
+                ps.setString(1, txtNombre.getText());
+                ps.setDouble(2, Double.parseDouble(txtPrecio.getText()));
+                ps.setInt(3, Integer.parseInt(txtStock.getText()));
+                ps.setInt(4, idCat);
+                ps.setString(5, comboCategoria.getValue());
+
+                ps.executeUpdate();
+            } else if (tipo.equals("Insumo")) {
+
+                idCat = obtenerIdCategoria(conn);
+
+                String sql = "INSERT INTO medicamentos (nombre, descripcion, id_categoria, precio, stock) VALUES (?, ?, ?, ?, ?)";
+                PreparedStatement ps = conn.prepareStatement(sql);
+
+                ps.setString(1, txtNombre.getText());
+                ps.setString(2, txtDescripcion.getText());
+                ps.setInt(3, idCat);
+                ps.setDouble(4, Double.parseDouble(txtPrecio.getText()));
+                ps.setInt(5, Integer.parseInt(txtStock.getText()));
+
+                ps.executeUpdate();
+            }
+
             return true;
+
         } catch (Exception e) {
             e.printStackTrace();
             new Alert(Alert.AlertType.ERROR, "Error al guardar: " + e.getMessage()).show();
             return false;
         }
+    }
+
+    private int obtenerIdCategoria(Connection conn) throws Exception {
+        String sqlCat = "SELECT id_categoria FROM categorias WHERE nombre = ?";
+        PreparedStatement psCat = conn.prepareStatement(sqlCat);
+        psCat.setString(1, comboCategoria.getValue());
+        ResultSet rs = psCat.executeQuery();
+        return rs.next() ? rs.getInt("id_categoria") : 0;
     }
 
     private void cargarCategorias() {
