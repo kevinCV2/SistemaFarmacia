@@ -165,11 +165,11 @@ public class GenerarTicketView {
             if (nv.isEmpty()) { suggestionsMenu.hide(); return; }
             suggestionsMenu.getItems().clear();
 
-            String sql = "SELECT nombre, precio FROM (" +
-                         "  SELECT nombre, precio FROM public.medicamentos " +
-                         "  UNION ALL " +
-                         "  SELECT nombre, precio FROM public.insumos " +
-                         ") AS todo WHERE nombre ILIKE ? LIMIT 10";
+            String sql = "SELECT nombre, precio FROM ("
+                    + "  SELECT nombre, 0.0 AS precio FROM public.medicamentos "
+                    + "  UNION ALL "
+                    + "  SELECT nombre, precio FROM public.insumos "
+                    + ") AS todo WHERE nombre ILIKE ? LIMIT 10";
 
             try (Connection conn = ConexionDB.getInstance(); PreparedStatement ps = conn.prepareStatement(sql)) {
                 ps.setString(1, "%" + nv + "%");
@@ -348,23 +348,31 @@ public class GenerarTicketView {
     }
 
     private double buscarPrecioCualquierTabla(String nombre) {
-        String sql = "SELECT precio FROM public.medicamentos WHERE nombre ILIKE ? " +
-                     "UNION ALL " +
-                     "SELECT precio FROM public.insumos WHERE nombre ILIKE ? LIMIT 1";
-        try (Connection conn = ConexionDB.getInstance(); PreparedStatement ps = conn.prepareStatement(sql)) {
-            String param = "%" + nombre.trim() + "%";
-            ps.setString(1, param);
-            ps.setString(2, param);
+
+        // Primero intenta buscar en insumos (que sí tienen precio)
+        String sqlInsumos = "SELECT precio FROM public.insumos WHERE nombre ILIKE ? LIMIT 1";
+
+        try (Connection conn = ConexionDB.getInstance(); PreparedStatement ps = conn.prepareStatement(sqlInsumos)) {
+
+            ps.setString(1, "%" + nombre.trim() + "%");
             ResultSet rs = ps.executeQuery();
-            if (rs.next()) return rs.getDouble("precio");
-        } catch (Exception e) { e.printStackTrace(); }
+
+            if (rs.next()) {
+                return rs.getDouble("precio");
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        // Si no existe en insumos, es medicamento sin precio
         return 0.0;
     }
 
     private boolean guardarTicketEnBD() {
         String insertTicket = "INSERT INTO public.tickets (folio, fecha, paciente, direccion, telefono, total) VALUES (?, NOW(), ?, ?, ?, ?) RETURNING id_ticket";
         String insertDetalle = "INSERT INTO public.ticket_detalles (id_ticket, producto, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?)";
-        String updateStockMed = "UPDATE public.medicamentos SET stock = stock - ? WHERE nombre ILIKE ?";
+        String updateStockMed = "UPDATE public.medicamentos SET existencia = existencia - ? WHERE nombre ILIKE ?";
         String updateStockIns = "UPDATE public.insumos SET stock = stock - ? WHERE nombre ILIKE ?";
 
         try (Connection conn = ConexionDB.getInstance()) {

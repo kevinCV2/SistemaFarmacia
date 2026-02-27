@@ -144,37 +144,49 @@ public class CatalogoView {
 
     private ObservableList<ObservableList<Object>> getDataFromDB() {
         ObservableList<ObservableList<Object>> data = FXCollections.observableArrayList();
-        
-        // CORRECCIÓN: Nombres de tabla y columnas según diagrama
-        String sql = """
-            SELECT 
-                m.id_medicamento, m.nombre, m.descripcion, m.stock AS stock_inicial,
-                COALESCE(SUM(CASE WHEN mov.tipo = 'ENTRADA' THEN mov.cantidad ELSE 0 END), 0) AS entradas,
-                COALESCE(SUM(CASE WHEN mov.tipo = 'SALIDA' THEN mov.cantidad ELSE 0 END), 0) AS salidas
-            FROM medicamentos m
-            LEFT JOIN movimientos_inventario mov ON m.id_medicamento = mov.id_medicamento 
-                 AND mov.fecha >= date_trunc('week', CURRENT_DATE)
-            GROUP BY m.id_medicamento, m.nombre, m.descripcion, m.stock
-            ORDER BY m.nombre
-        """;
 
-        try (Connection conn = ConexionDB.getInstance();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+        String sql = """
+        SELECT 
+            m.id_medicamento,
+            m.nombre,
+            m.descripcion,
+            m.existencia,
+            COALESCE(SUM(CASE WHEN mov.tipo = 'ENTRADA' THEN mov.cantidad ELSE 0 END), 0) AS entradas,
+            COALESCE(SUM(CASE WHEN mov.tipo = 'SALIDA' THEN mov.cantidad ELSE 0 END), 0) AS salidas
+        FROM medicamentos m
+        LEFT JOIN movimientos_inventario mov 
+            ON m.id_medicamento = mov.id_medicamento
+            AND mov.fecha >= date_trunc('week', CURRENT_DATE)
+        GROUP BY m.id_medicamento, m.nombre, m.descripcion, m.existencia
+        ORDER BY m.nombre
+    """;
+
+        try (Connection conn = ConexionDB.getInstance(); Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
 
             int i = 1;
             while (rs.next()) {
-                int inicial = rs.getInt("stock_inicial");
-                int ent = rs.getInt("entradas");
-                int sal = rs.getInt("salidas");
-                int stockFinal = inicial + ent - sal;
+
+                int existencia = rs.getInt("existencia");
+                int entradas = rs.getInt("entradas");
+                int salidas = rs.getInt("salidas");
+                int inventarioFinal = existencia + entradas - salidas;
 
                 data.add(FXCollections.observableArrayList(
-                        rs.getInt("id_medicamento"), i++, rs.getString("nombre"),
-                        rs.getString("descripcion"), inicial, ent, sal, stockFinal
+                        rs.getInt("id_medicamento"),
+                        i++,
+                        rs.getString("nombre"),
+                        rs.getString("descripcion"),
+                        existencia,
+                        entradas,
+                        salidas,
+                        inventarioFinal
                 ));
             }
-        } catch (Exception e) { e.printStackTrace(); }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
         return data;
     }
 
