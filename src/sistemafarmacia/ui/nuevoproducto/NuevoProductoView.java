@@ -1,6 +1,5 @@
 package sistemafarmacia.ui.nuevoproducto;
 
-import javafx.geometry.HPos;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.*;
@@ -24,7 +23,7 @@ public class NuevoProductoView {
     private TextField txtNombre, txtPrecio, txtStock;
     private TextArea txtDescripcion;
     private ComboBox<String> comboCategoria;
-    private ComboBox<String> comboTipo; // NUEVO
+    private ComboBox<String> comboTipo;
 
     public NuevoProductoView(Runnable actionVolver) {
         this.actionVolver = actionVolver;
@@ -47,205 +46,160 @@ public class NuevoProductoView {
         titulo.setFont(Font.font("System Bold", 32));
         titulo.setTextFill(Color.WHITE);
 
-        txtNombre = crearTextField("Nombre del Producto", 400, 30);
-
-        txtDescripcion = new TextArea();
-        txtDescripcion.setPromptText("Descripción detallada...");
-        txtDescripcion.setPrefHeight(120);
-        txtDescripcion.setMaxWidth(400);
-        txtDescripcion.setWrapText(true);
-        txtDescripcion.setStyle(
-            "-fx-control-inner-background: #1e293b; " +
-            "-fx-text-fill: white; " +
-            "-fx-prompt-text-fill: #94a3b8; " +
-            "-fx-border-color: #334155; " +
-            "-fx-border-radius: 5; " +
-            "-fx-font-size: 14;"
-        );
-
-        // NUEVO Combo Tipo
+        // --- Configuración de Controles ---
         comboTipo = new ComboBox<>();
         comboTipo.getItems().addAll("Medicamento", "Insumo", "Filtro");
-        comboTipo.setPromptText("Seleccione Tipo de Producto");
+        comboTipo.setPromptText("Seleccione Tipo");
         comboTipo.setPrefWidth(400);
-        comboTipo.setMaxWidth(400);
-        comboTipo.setStyle("-fx-background-color: #1e293b; -fx-text-fill: white; -fx-font-size: 14;");
+        estilizarControl(comboTipo);
+
+        txtNombre = crearTextField("Nombre del Producto", 400, 35);
+        
+        txtDescripcion = new TextArea();
+        txtDescripcion.setPromptText("Descripción (Para Insumos)...");
+        txtDescripcion.setPrefHeight(80);
+        txtDescripcion.setMaxWidth(400);
+        txtDescripcion.setWrapText(true);
+        txtDescripcion.setStyle("-fx-control-inner-background: #1e293b; -fx-text-fill: white; -fx-border-color: #334155; -fx-border-radius: 5;");
 
         comboCategoria = new ComboBox<>();
         comboCategoria.setPromptText("Seleccione Categoría");
         comboCategoria.setPrefWidth(400);
-        comboCategoria.setMaxWidth(400);
-        comboCategoria.setStyle("-fx-background-color: #1e293b; -fx-text-fill: white; -fx-font-size: 14;");
-        cargarCategorias();
+        estilizarControl(comboCategoria);
 
-        txtPrecio = crearTextField("Precio (ej: 10.50)", 400, 30);
-        txtStock = crearTextField("Cantidad inicial", 400, 30);
+        // --- LÓGICA DINÁMICA DE CATEGORÍAS ---
+        comboTipo.setOnAction(e -> {
+            String seleccion = comboTipo.getValue();
+            comboCategoria.getItems().clear();
+            
+            if ("Medicamento".equals(seleccion)) {
+                // Según tu BD: Medicamentos están en tabla 'insumos'
+                cargarCategoriasDesde("insumos");
+                comboCategoria.setDisable(false);
+                txtDescripcion.setDisable(true); // Usualmente tabla insumos no tiene descripción larga
+            } else if ("Insumo".equals(seleccion)) {
+                // Según tu BD: Insumos están en tabla 'medicamentos'
+                cargarCategoriasDesde("medicamentos");
+                comboCategoria.setDisable(false);
+                txtDescripcion.setDisable(false);
+            } else if ("Filtro".equals(seleccion)) {
+                comboCategoria.setDisable(true);
+                txtDescripcion.setDisable(true);
+            }
+        });
+
+        txtPrecio = crearTextField("Precio (0.00)", 400, 35);
+        txtStock = crearTextField("Stock Inicial", 400, 35);
 
         GridPane grid = new GridPane();
-        grid.setVgap(15);
-        grid.setHgap(20);
+        grid.setVgap(12);
         grid.setAlignment(Pos.CENTER);
 
         int row = 0;
-
-        grid.add(crearLabel("Tipo de Producto:"), 0, row++);
-        grid.add(comboTipo, 0, row++);
-
-        grid.add(crearLabel("Nombre:"), 0, row++);
-        grid.add(txtNombre, 0, row++);
-        
-        grid.add(crearLabel("Descripción:"), 0, row++);
-        grid.add(txtDescripcion, 0, row++);
-
-        grid.add(crearLabel("Categoría:"), 0, row++);
-        grid.add(comboCategoria, 0, row++);
-
-        grid.add(crearLabel("Precio:"), 0, row++);
-        grid.add(txtPrecio, 0, row++);
-
-        grid.add(crearLabel("Stock:"), 0, row++);
-        grid.add(txtStock, 0, row++);
+        agregarAlGrid(grid, "Tipo de Producto:", comboTipo, row++);
+        agregarAlGrid(grid, "Nombre:", txtNombre, row++);
+        agregarAlGrid(grid, "Descripción (Solo Insumos):", txtDescripcion, row++);
+        agregarAlGrid(grid, "Categoría:", comboCategoria, row++);
+        agregarAlGrid(grid, "Precio:", txtPrecio, row++);
+        agregarAlGrid(grid, "Stock inicial:", txtStock, row++);
 
         Button btnGuardar = new Button("Confirmar Registro");
         btnGuardar.setStyle("-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 16; -fx-padding: 12 25; -fx-cursor: hand;");
+        btnGuardar.setOnAction(e -> ejecutarGuardado());
 
         Button btnCancelar = new Button("Cancelar");
         btnCancelar.setStyle("-fx-background-color: #374151; -fx-text-fill: white; -fx-font-size: 16; -fx-padding: 12 25; -fx-cursor: hand;");
-
-        btnGuardar.setOnAction(e -> ejecutarGuardado());
-        btnCancelar.setOnAction(e -> {
-            if (actionVolver != null) actionVolver.run();
-        });
+        btnCancelar.setOnAction(e -> { if (actionVolver != null) actionVolver.run(); });
 
         HBox botones = new HBox(20, btnGuardar, btnCancelar);
         botones.setAlignment(Pos.CENTER);
-        botones.setPadding(new Insets(20, 0, 0, 0));
-
-        content.getChildren().addAll(titulo, grid, botones);
         
+        content.getChildren().addAll(titulo, grid, botones);
         scrollPane.setContent(content);
         root.setCenter(scrollPane);
     }
 
-    public BorderPane getRoot() {
-        return root;
+    private void cargarCategoriasDesde(String tablaDestino) {
+        // Obtenemos categorías únicas de la tabla correspondiente
+        String sql = "SELECT DISTINCT categoria FROM " + tablaDestino + " ORDER BY categoria ASC";
+        // Si tienes una tabla maestra 'categorias', podrías filtrar por un campo 'tipo' si existiera.
+        try (Connection conn = ConexionDB.getInstance();
+             ResultSet rs = conn.createStatement().executeQuery(sql)) {
+            while (rs.next()) {
+                String cat = rs.getString(1);
+                if (cat != null && !cat.isEmpty()) comboCategoria.getItems().add(cat);
+            }
+        } catch (Exception e) { e.printStackTrace(); }
+    }
+
+    private boolean guardarEnBD() {
+        String tipo = comboTipo.getValue();
+        try (Connection conn = ConexionDB.getInstance()) {
+            conn.setAutoCommit(false);
+            try {
+                if ("Medicamento".equals(tipo)) {
+                    // DESTINO: Tabla insumos
+                    String sql = "INSERT INTO insumos (nombre, precio, stock, categoria) VALUES (?, ?, ?, ?)";
+                    PreparedStatement ps = conn.prepareStatement(sql);
+                    ps.setString(1, txtNombre.getText());
+                    ps.setDouble(2, Double.parseDouble(txtPrecio.getText()));
+                    ps.setInt(3, Integer.parseInt(txtStock.getText()));
+                    ps.setString(4, comboCategoria.getValue());
+                    ps.executeUpdate();
+                } else if ("Insumo".equals(tipo)) {
+                    // DESTINO: Tabla medicamentos
+                    String sql = "INSERT INTO medicamentos (nombre, descripcion, precio, stock, categoria) VALUES (?, ?, ?, ?, ?)";
+                    PreparedStatement ps = conn.prepareStatement(sql);
+                    ps.setString(1, txtNombre.getText());
+                    ps.setString(2, txtDescripcion.getText());
+                    ps.setDouble(3, Double.parseDouble(txtPrecio.getText()));
+                    ps.setInt(4, Integer.parseInt(txtStock.getText()));
+                    ps.setString(5, comboCategoria.getValue());
+                    ps.executeUpdate();
+                } else if ("Filtro".equals(tipo)) {
+                    // DESTINO: Tabla insumos
+                    String sql = "INSERT INTO insumos (nombre, precio, stock, categoria) VALUES (?, ?, ?, ?)";
+                    PreparedStatement ps = conn.prepareStatement(sql);
+                    ps.setString(1, txtNombre.getText());
+                    ps.setDouble(2, Double.parseDouble(txtPrecio.getText()));
+                    ps.setInt(3, Integer.parseInt(txtStock.getText()));
+                    ps.setString(4, "Filtros");
+                    ps.executeUpdate();
+                }
+                conn.commit();
+                return true;
+            } catch (Exception ex) {
+                conn.rollback();
+                throw ex;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
     }
 
     private void ejecutarGuardado() {
         if (validarCampos()) {
             if (guardarEnBD()) {
-                Alert alert = new Alert(Alert.AlertType.INFORMATION, "Producto guardado correctamente");
-                alert.showAndWait();
+                new Alert(Alert.AlertType.INFORMATION, "Producto guardado correctamente").showAndWait();
                 if (actionVolver != null) actionVolver.run();
             }
         }
     }
 
     private boolean validarCampos() {
-        if (comboTipo.getValue() == null ||
-            txtNombre.getText().isEmpty() ||
-            txtPrecio.getText().isEmpty() ||
-            txtStock.getText().isEmpty()) {
-
-            new Alert(Alert.AlertType.WARNING, "Por favor complete todos los campos").show();
-            return false;
-        }
-
-        if (!comboTipo.getValue().equals("Filtro") && comboCategoria.getValue() == null) {
-            new Alert(Alert.AlertType.WARNING, "Seleccione una categoría").show();
-            return false;
-        }
-
-        try {
-            Double.parseDouble(txtPrecio.getText());
-            Integer.parseInt(txtStock.getText());
-        } catch (NumberFormatException e) {
-            new Alert(Alert.AlertType.ERROR, "Precio y Stock deben ser números válidos").show();
-            return false;
-        }
-
+        if (comboTipo.getValue() == null || txtNombre.getText().trim().isEmpty()) return false;
+        if (!"Filtro".equals(comboTipo.getValue()) && comboCategoria.getValue() == null) return false;
         return true;
     }
 
-    private boolean guardarEnBD() {
-        try (Connection conn = ConexionDB.getInstance()) {
-
-            String tipo = comboTipo.getValue();
-            int idCat = 0;
-
-            // Si es Filtro, usamos automáticamente la categoría "Filtros"
-            if (tipo.equals("Filtro")) {
-                String sqlCat = "SELECT id_categoria FROM categorias WHERE nombre ILIKE 'Filtros'";
-                PreparedStatement psCat = conn.prepareStatement(sqlCat);
-                ResultSet rs = psCat.executeQuery();
-                if (rs.next()) {
-                    idCat = rs.getInt("id_categoria");
-                }
-
-                String sql = "INSERT INTO insumos (nombre, precio, stock, id_categoria, categoria) VALUES (?, ?, ?, ?, ?)";
-                PreparedStatement ps = conn.prepareStatement(sql);
-
-                ps.setString(1, txtNombre.getText());
-                ps.setDouble(2, Double.parseDouble(txtPrecio.getText()));
-                ps.setInt(3, Integer.parseInt(txtStock.getText()));
-                ps.setInt(4, idCat);
-                ps.setString(5, "Filtros");
-
-                ps.executeUpdate();
-            } else if (tipo.equals("Medicamento")) {
-
-                idCat = obtenerIdCategoria(conn);
-
-                String sql = "INSERT INTO insumos (nombre, precio, stock, id_categoria, categoria) VALUES (?, ?, ?, ?, ?)";
-                PreparedStatement ps = conn.prepareStatement(sql);
-
-                ps.setString(1, txtNombre.getText());
-                ps.setDouble(2, Double.parseDouble(txtPrecio.getText()));
-                ps.setInt(3, Integer.parseInt(txtStock.getText()));
-                ps.setInt(4, idCat);
-                ps.setString(5, comboCategoria.getValue());
-
-                ps.executeUpdate();
-            } else if (tipo.equals("Insumo")) {
-
-                idCat = obtenerIdCategoria(conn);
-
-                String sql = "INSERT INTO medicamentos (nombre, descripcion, id_categoria, precio, stock) VALUES (?, ?, ?, ?, ?)";
-                PreparedStatement ps = conn.prepareStatement(sql);
-
-                ps.setString(1, txtNombre.getText());
-                ps.setString(2, txtDescripcion.getText());
-                ps.setInt(3, idCat);
-                ps.setDouble(4, Double.parseDouble(txtPrecio.getText()));
-                ps.setInt(5, Integer.parseInt(txtStock.getText()));
-
-                ps.executeUpdate();
-            }
-
-            return true;
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            new Alert(Alert.AlertType.ERROR, "Error al guardar: " + e.getMessage()).show();
-            return false;
-        }
+    private void agregarAlGrid(GridPane grid, String etiqueta, javafx.scene.Node control, int row) {
+        grid.add(crearLabel(etiqueta), 0, row * 2);
+        grid.add(control, 0, (row * 2) + 1);
     }
 
-    private int obtenerIdCategoria(Connection conn) throws Exception {
-        String sqlCat = "SELECT id_categoria FROM categorias WHERE nombre = ?";
-        PreparedStatement psCat = conn.prepareStatement(sqlCat);
-        psCat.setString(1, comboCategoria.getValue());
-        ResultSet rs = psCat.executeQuery();
-        return rs.next() ? rs.getInt("id_categoria") : 0;
-    }
-
-    private void cargarCategorias() {
-        try (Connection conn = ConexionDB.getInstance()) {
-            ResultSet rs = conn.createStatement().executeQuery("SELECT nombre FROM categorias");
-            while (rs.next()) {
-                comboCategoria.getItems().add(rs.getString("nombre"));
-            }
-        } catch (Exception e) { e.printStackTrace(); }
+    private void estilizarControl(Control c) {
+        c.setStyle("-fx-background-color: #1e293b; -fx-text-fill: white; -fx-font-size: 14; -fx-border-color: #334155; -fx-border-radius: 5;");
     }
 
     private TextField crearTextField(String prompt, double maxWidth, double height) {
@@ -253,21 +207,16 @@ public class NuevoProductoView {
         tf.setPromptText(prompt);
         tf.setMaxWidth(maxWidth);
         tf.setPrefHeight(height);
-        tf.setStyle(
-            "-fx-control-inner-background: #1e293b; " +
-            "-fx-text-fill: white; " +
-            "-fx-prompt-text-fill: #94a3b8; " +
-            "-fx-border-color: #334155; " +
-            "-fx-border-radius: 5; " +
-            "-fx-font-size: 14;"
-        );
+        tf.setStyle("-fx-control-inner-background: #1e293b; -fx-text-fill: white; -fx-prompt-text-fill: #94a3b8; -fx-border-color: #334155; -fx-border-radius: 5;");
         return tf;
     }
 
     private Label crearLabel(String texto) {
         Label l = new Label(texto);
-        l.setTextFill(Color.web("#cbd5e1"));
-        l.setFont(Font.font(16));
+        l.setTextFill(Color.web("#94a3b8"));
+        l.setFont(Font.font("System", 14));
         return l;
     }
+
+    public BorderPane getRoot() { return root; }
 }

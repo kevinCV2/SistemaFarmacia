@@ -16,12 +16,7 @@ import sistemafarmacia.utils.UIComponents;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.text.NumberFormat;
-import java.util.Locale;
 
-/**
- * Vista principal del Dashboard con estadísticas vinculadas a la tabla INSUMOS.
- */
 public class DashboardView {
 
     private BorderPane root;
@@ -37,49 +32,48 @@ public class DashboardView {
         VBox container = new VBox(25);
         container.setPadding(new Insets(20));
 
-        // --- TARJETAS DE ESTADÍSTICAS ---
+        // --- SECCIÓN DE ESTADÍSTICAS (AHORA CON 2 CARDS GRANDES) ---
         HBox stats = new HBox(20);
         
-        // CORRECCIÓN CLAVE: 
-        // Como insertamos los medicamentos en la tabla 'insumos' con categoría 'MEDICAMENTOS',
-        // la consulta debe ser ésta para que NO marque 0:
-        String totalMeds = obtenerConteoBase("SELECT COUNT(*) FROM public.insumos WHERE categoria = 'MEDICAMENTOS'");
+        // 1. Conteo de Artículos Totales (Medicamentos + Insumos)
+        String sqlTotal = "SELECT (SELECT COUNT(*) FROM medicamentos) + (SELECT COUNT(*) FROM insumos)";
+        String totalItems = obtenerConteoBase(sqlTotal);
         
-        // Para el stock bajo en insumos (ya que no tienen stock_minimo en el DER), 
-        // usaremos una base de 5 unidades por defecto:
-        String stockBajo = obtenerConteoBase("SELECT COUNT(*) FROM public.insumos WHERE stock <= 5");
-        
-        String ventasHoy = obtenerVentasHoy();
+        // 2. Conteo de Stock Bajo (Menos de 10 unidades en cualquiera de las dos tablas)
+        String sqlBajo = "SELECT (SELECT COUNT(*) FROM medicamentos WHERE existencia < 10) + (SELECT COUNT(*) FROM insumos WHERE stock < 10)";
+        String stockBajo = obtenerConteoBase(sqlBajo);
 
-        Region card1 = UIComponents.statCard("Total Medicamentos", totalMeds, "/sistemafarmacia/assets/icons/Productos1.png");
-        Region card2 = UIComponents.statCard("Stock Bajo", stockBajo, "/sistemafarmacia/assets/icons/Basura2.png");
-        Region card3 = UIComponents.statCard("Ventas Hoy", ventasHoy, "/sistemafarmacia/assets/icons/Ventas2.png");
+        // Creamos solo 2 tarjetas
+        Region card1 = UIComponents.statCard("Artículos en Inventario", totalItems, "/sistemafarmacia/assets/icons/Productos1.png");
+        Region card2 = UIComponents.statCard("Productos con Stock Bajo", stockBajo, "/sistemafarmacia/assets/icons/Basura2.png");
         
+        // Hgrow asegura que se expandan para llenar el espacio
         HBox.setHgrow(card1, Priority.ALWAYS);
         HBox.setHgrow(card2, Priority.ALWAYS);
-        HBox.setHgrow(card3, Priority.ALWAYS);
-        stats.getChildren().addAll(card1, card2, card3);
+        
+        stats.getChildren().addAll(card1, card2);
 
-        // --- GRID DE MÓDULOS ---
+        // --- GRILLA DE ACCESOS DIRECTOS ---
         GridPane grid = new GridPane();
         grid.setHgap(20); 
         grid.setVgap(20);
         
+        // Configuración de 3 columnas iguales (33.33% cada una)
         ColumnConstraints col = new ColumnConstraints();
         col.setPercentWidth(33.33);
         grid.getColumnConstraints().addAll(col, col, col);
 
-        // FILA 0
-        grid.add(UIComponents.bigCard("Catálogo Insumos", "#374151", "/sistemafarmacia/assets/icons/Catálogo.png",
+        // Fila 0
+        grid.add(UIComponents.bigCard("Catálogo de insumos", "#374151", "/sistemafarmacia/assets/icons/Catálogo.png",
             () -> root.setCenter(new CatalogoView(() -> root.setCenter(createCenter())).getRoot())), 0, 0);
 
-        grid.add(UIComponents.bigCard("Catálogo Medicamento", "#374151", "/sistemafarmacia/assets/icons/Catálogo.png",
+        grid.add(UIComponents.bigCard("Catálogo de medicamentos", "#374151", "/sistemafarmacia/assets/icons/Catálogo.png",
             () -> root.setCenter(new CatalogoMedicamentoView(() -> root.setCenter(createCenter())).getRoot())), 1, 0);
 
         grid.add(UIComponents.bigCard("Nuevo Producto", "#374151", "/sistemafarmacia/assets/icons/Nuevo producto.png",
             () -> root.setCenter(new NuevoProductoView(() -> root.setCenter(createCenter())).getRoot())), 2, 0);
 
-        // FILA 1
+        // Fila 1
         grid.add(UIComponents.bigCard("Sesiones y Ventas", "#374151", "/sistemafarmacia/assets/icons/Sesiones y ventas.png",
             () -> root.setCenter(new SesionesView(() -> root.setCenter(createCenter())).getRoot())), 0, 1);
 
@@ -89,8 +83,8 @@ public class DashboardView {
         grid.add(UIComponents.bigCard("Cortes Semanales", "#374151", "/sistemafarmacia/assets/icons/Cortes semanales.png",
             () -> root.setCenter(new CortesSemanalesView(() -> root.setCenter(createCenter())).getRoot())), 2, 1);
 
-        // FILA 2
-        grid.add(UIComponents.bigCard("Cortes Semanales Sesiones", "#374151", "/sistemafarmacia/assets/icons/Cortes semanales.png",
+        // Fila 2
+        grid.add(UIComponents.bigCard("Cortes de venta", "#374151", "/sistemafarmacia/assets/icons/Cortes semanales.png",
             () -> root.setCenter(new CortesSesiones(() -> root.setCenter(createCenter())).getRoot())), 0, 2);
 
         grid.add(UIComponents.bigCard("Filtros", "#374151", "/sistemafarmacia/assets/icons/Filtros.png",
@@ -107,27 +101,10 @@ public class DashboardView {
              ResultSet rs = ps.executeQuery()) {
             if (rs.next()) return String.valueOf(rs.getInt(1));
         } catch (Exception e) {
-            System.err.println("Error en conteo: " + e.getMessage());
+            System.err.println("Error en conteo Dashboard: " + e.getMessage());
         }
         return "0";
     }
 
-    private String obtenerVentasHoy() {
-        String sql = "SELECT SUM(total) FROM public.tickets WHERE CAST(fecha AS DATE) = CURRENT_DATE";
-        try (Connection conn = ConexionDB.getInstance();
-             PreparedStatement ps = conn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            if (rs.next()) {
-                double total = rs.getDouble(1);
-                return NumberFormat.getCurrencyInstance(Locale.US).format(total);
-            }
-        } catch (Exception e) {
-            System.err.println("Error en ventas hoy: " + e.getMessage());
-        }
-        return "$0.00";
-    }
-
-    public BorderPane getRoot() {
-        return root;
-    }
+    public BorderPane getRoot() { return root; }
 }

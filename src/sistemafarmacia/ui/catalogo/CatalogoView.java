@@ -9,6 +9,7 @@ import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
+import javafx.scene.text.FontWeight;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import sistemafarmacia.utils.ConexionDB;
@@ -40,7 +41,7 @@ public class CatalogoView {
 
         VBox headerText = new VBox(5);
         Label title = new Label("Catálogo de Insumos");
-        title.setFont(Font.font(26));
+        title.setFont(Font.font("System", FontWeight.BOLD, 26));
         title.setTextFill(Color.WHITE);
         Label subtitle = new Label("Control Semanal de Inventario");
         subtitle.setTextFill(Color.web("#9ca3af"));
@@ -53,15 +54,31 @@ public class CatalogoView {
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         table.setStyle("-fx-base: #1f2933; -fx-control-inner-background: #111827; -fx-background-color: #111827;");
 
+        // Lógica de colores para las filas (Cabeceras azules)
+        table.setRowFactory(tv -> new TableRow<ObservableList<Object>>() {
+            @Override
+            protected void updateItem(ObservableList<Object> item, boolean empty) {
+                super.updateItem(item, empty);
+                // El índice 8 es nuestro indicador de "esCabecera"
+                if (item != null && item.size() > 8 && (boolean) item.get(8)) {
+                    setStyle("-fx-background-color: #1e40af; -fx-font-weight: bold;");
+                } else {
+                    setStyle("");
+                }
+            }
+        });
+
+        // Definición de Columnas
         table.getColumns().add(createColumn("ID", 0, Pos.CENTER, false)); 
         table.getColumns().add(createColumn("No.", 1, Pos.CENTER, true));
         table.getColumns().add(createColumn("Nombre", 2, Pos.CENTER_LEFT, true));
-        table.getColumns().add(createColumn("Descripción", 3, Pos.CENTER_LEFT, true));
+        table.getColumns().add(createColumn("Categoría", 3, Pos.CENTER_LEFT, true));
         table.getColumns().add(createColumn("Inicial", 4, Pos.CENTER, true));
         table.getColumns().add(createColumn("Entradas", 5, Pos.CENTER, true));
         table.getColumns().add(createColumn("Salidas", 6, Pos.CENTER, true));
         table.getColumns().add(createColumn("Stock Final", 7, Pos.CENTER, true));
 
+        // Columna de Acciones
         TableColumn<ObservableList<Object>, Void> accionesCol = new TableColumn<>("Acciones");
         accionesCol.setCellFactory(col -> new TableCell<>() {
             private final Button btnMov = new Button("📦"); 
@@ -83,16 +100,21 @@ public class CatalogoView {
             }
             @Override protected void updateItem(Void item, boolean empty) {
                 super.updateItem(item, empty);
-                setGraphic(empty ? null : box);
+                // No mostrar botones en las filas que son cabeceras de categoría
+                if (empty || (getTableRow().getItem() != null && (boolean)getTableRow().getItem().get(8))) {
+                    setGraphic(null);
+                } else {
+                    setGraphic(box);
+                }
             }
         });
         table.getColumns().add(accionesCol);
 
+        actualizarTabla();
+
         VBox.setVgrow(table, Priority.ALWAYS);
         content.getChildren().addAll(topBar, table);
         root.setCenter(content);
-
-        actualizarTabla();
     }
 
     private void actualizarTabla() {
@@ -100,11 +122,71 @@ public class CatalogoView {
         table.refresh();
     }
 
+    private ObservableList<ObservableList<Object>> getDataFromDB() {
+        ObservableList<ObservableList<Object>> data = FXCollections.observableArrayList();
+
+        String sql = """
+            SELECT 
+                m.id_medicamento, m.nombre, m.categoria, m.existencia,
+                COALESCE(SUM(CASE WHEN mov.tipo = 'ENTRADA' THEN mov.cantidad ELSE 0 END), 0) AS entradas,
+                COALESCE(SUM(CASE WHEN mov.tipo = 'SALIDA' THEN mov.cantidad ELSE 0 END), 0) AS salidas
+            FROM medicamentos m
+            LEFT JOIN movimientos_inventario mov 
+                ON m.id_medicamento = mov.id_medicamento
+                AND mov.fecha >= date_trunc('week', CURRENT_DATE)
+            GROUP BY m.id_medicamento, m.nombre, m.categoria, m.existencia, m.id_categoria
+            ORDER BY m.id_categoria ASC, m.nombre ASC
+        """;
+
+        try (Connection conn = ConexionDB.getInstance(); 
+             Statement stmt = conn.createStatement(); 
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            String categoriaActual = "";
+            int contadorSeccion = 1;
+
+            while (rs.next()) {
+                String catRaw = rs.getString("categoria");
+                if (catRaw == null) catRaw = "SIN CATEGORÍA";
+
+                // Insertar fila de DIVISIÓN AZUL si cambia la categoría
+                if (!catRaw.equals(categoriaActual)) {
+                    categoriaActual = catRaw;
+                    ObservableList<Object> cabecera = FXCollections.observableArrayList();
+                    cabecera.addAll(0, "", categoriaActual.toUpperCase(), "", "", "", "", "", true); 
+                    // El índice 8 es el boolean 'esCabecera'
+                    data.add(cabecera);
+                    contadorSeccion = 1;
+                }
+
+                int existencia = rs.getInt("existencia");
+                int entradas = rs.getInt("entradas");
+                int salidas = rs.getInt("salidas");
+                int inventarioFinal = existencia + entradas - salidas;
+
+                ObservableList<Object> fila = FXCollections.observableArrayList(
+                        rs.getInt("id_medicamento"),
+                        contadorSeccion++,
+                        rs.getString("nombre"),
+                        rs.getString("categoria"),
+                        existencia,
+                        entradas,
+                        salidas,
+                        inventarioFinal,
+                        false // esCabecera = false
+                );
+                data.add(fila);
+            }
+        } catch (Exception e) { e.printStackTrace(); }
+        return data;
+    }
+
+    // --- MÉTODOS DE APOYO (MOVIMIENTOS Y ELIMINACIÓN) ---
+
     private void abrirVentanaMovimiento(ObservableList<Object> row) {
         Stage modal = new Stage();
         modal.initModality(Modality.APPLICATION_MODAL);
-        modal.setTitle("Registrar Movimiento - " + row.get(2));
-
+        modal.setTitle("Registrar Movimiento");
         VBox layout = new VBox(15);
         layout.setPadding(new Insets(20));
         layout.setAlignment(Pos.CENTER);
@@ -120,91 +202,66 @@ public class CatalogoView {
                 registrarMovimiento(Integer.parseInt(row.get(0).toString()), cbTipo.getValue(), Integer.parseInt(txtCantidad.getText()));
                 modal.close();
                 actualizarTabla();
-            } catch (NumberFormatException ex) {
-                new Alert(Alert.AlertType.ERROR, "Ingrese una cantidad válida.").show();
+            } catch (Exception ex) { 
+                new Alert(Alert.AlertType.ERROR, "Datos inválidos").show(); 
             }
         });
 
-        layout.getChildren().addAll(new Label("Tipo de movimiento:"), cbTipo, new Label("Cantidad:"), txtCantidad, btnGuardar);
-        modal.setScene(new Scene(layout, 300, 250));
+        layout.getChildren().addAll(new Label("Movimiento para: " + row.get(2)), cbTipo, txtCantidad, btnGuardar);
+        modal.setScene(new Scene(layout, 350, 250));
         modal.showAndWait();
     }
 
     private void registrarMovimiento(int idMed, String tipo, int cantidad) {
-        // CORRECCIÓN: Nombre de tabla 'movimientos_inventario'
         String sql = "INSERT INTO movimientos_inventario (id_medicamento, tipo, cantidad, fecha) VALUES (?, ?, ?, NOW())";
-        try (Connection conn = ConexionDB.getInstance();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setInt(1, idMed);
-            ps.setString(2, tipo);
-            ps.setInt(3, cantidad);
+        try (Connection conn = ConexionDB.getInstance(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, idMed); ps.setString(2, tipo); ps.setInt(3, cantidad);
             ps.executeUpdate();
         } catch (Exception e) { e.printStackTrace(); }
-    }
-
-    private ObservableList<ObservableList<Object>> getDataFromDB() {
-        ObservableList<ObservableList<Object>> data = FXCollections.observableArrayList();
-        
-        // CORRECCIÓN: Nombres de tabla y columnas según diagrama
-        String sql = """
-            SELECT 
-                m.id_medicamento, m.nombre, m.descripcion, m.stock AS stock_inicial,
-                COALESCE(SUM(CASE WHEN mov.tipo = 'ENTRADA' THEN mov.cantidad ELSE 0 END), 0) AS entradas,
-                COALESCE(SUM(CASE WHEN mov.tipo = 'SALIDA' THEN mov.cantidad ELSE 0 END), 0) AS salidas
-            FROM medicamentos m
-            LEFT JOIN movimientos_inventario mov ON m.id_medicamento = mov.id_medicamento 
-                 AND mov.fecha >= date_trunc('week', CURRENT_DATE)
-            GROUP BY m.id_medicamento, m.nombre, m.descripcion, m.stock
-            ORDER BY m.nombre
-        """;
-
-        try (Connection conn = ConexionDB.getInstance();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-
-            int i = 1;
-            while (rs.next()) {
-                int inicial = rs.getInt("stock_inicial");
-                int ent = rs.getInt("entradas");
-                int sal = rs.getInt("salidas");
-                int stockFinal = inicial + ent - sal;
-
-                data.add(FXCollections.observableArrayList(
-                        rs.getInt("id_medicamento"), i++, rs.getString("nombre"),
-                        rs.getString("descripcion"), inicial, ent, sal, stockFinal
-                ));
-            }
-        } catch (Exception e) { e.printStackTrace(); }
-        return data;
     }
 
     private void confirmarEliminacion(int id, String nombre) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("Confirmar Eliminación");
-        alert.setHeaderText("¿Estás seguro de eliminar este insumo?");
-        alert.setContentText("Se eliminará: " + nombre + "\nEsta acción no se puede deshacer.");
-
-        Optional<ButtonType> result = alert.showAndWait();
-        if (result.isPresent() && result.get() == ButtonType.OK) {
-            eliminarMedicamento(id);
-        }
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, "¿Eliminar " + nombre + "?", ButtonType.YES, ButtonType.NO);
+        alert.showAndWait().ifPresent(response -> {
+            if (response == ButtonType.YES) eliminarMedicamento(id);
+        });
     }
 
     private void eliminarMedicamento(int id) {
-        try (Connection conn = ConexionDB.getInstance();
+        try (Connection conn = ConexionDB.getInstance(); 
              PreparedStatement ps = conn.prepareStatement("DELETE FROM medicamentos WHERE id_medicamento=?")) {
-            ps.setInt(1, id);
-            ps.executeUpdate();
-            actualizarTabla();
+            ps.setInt(1, id); ps.executeUpdate(); actualizarTabla();
         } catch (Exception e) { 
-            new Alert(Alert.AlertType.ERROR, "No se puede eliminar: el producto tiene movimientos registrados.").show();
+            new Alert(Alert.AlertType.ERROR, "No se puede eliminar: tiene historial de movimientos.").show();
         }
     }
 
     private TableColumn<ObservableList<Object>, Object> createColumn(String title, int index, Pos alignment, boolean visible) {
         TableColumn<ObservableList<Object>, Object> col = new TableColumn<>(title);
-        col.setCellValueFactory(data -> new javafx.beans.property.SimpleObjectProperty<>(data.getValue().get(index)));
-        col.setStyle("-fx-alignment: " + alignment.name().replace("_", "-") + ";");
+        col.setCellValueFactory(data -> {
+            if (index < data.getValue().size()) {
+                return new javafx.beans.property.SimpleObjectProperty<>(data.getValue().get(index));
+            }
+            return null;
+        });
+        col.setCellFactory(column -> new TableCell<>() {
+            @Override
+            protected void updateItem(Object item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    setText(item.toString());
+                    setAlignment(alignment);
+                    // Si es cabecera, poner texto en blanco
+                    if (getTableRow().getItem() != null && (boolean)getTableRow().getItem().get(8)) {
+                        setTextFill(Color.WHITE);
+                    } else {
+                        setTextFill(Color.web("#e5e7eb"));
+                    }
+                }
+            }
+        });
         col.setVisible(visible);
         return col;
     }

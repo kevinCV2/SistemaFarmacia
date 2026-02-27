@@ -259,15 +259,36 @@ public class CortesSesiones {
     }
 
     private CorteDiario consultarBaseDatos(LocalDate fecha) {
-        String sql = "SELECT STRING_AGG(s.paciente || ' ($' || (s.total - COALESCE(i.precio, 0)) || ')', '\n') AS sesiones, " +
-                     "STRING_AGG(CASE WHEN s.medicamentos IS NOT NULL AND s.medicamentos <> '' AND UPPER(s.medicamentos) <> 'NINGUNO' " +
-                     "THEN s.paciente || ' (' || s.medicamentos || ') - $' || COALESCE(i.precio, 0) END, '\n') AS adicionales, " +
-                     "STRING_AGG(CASE WHEN s.estado_pago = 'CREDITO' THEN s.paciente || ' ($' || s.total || ')' END, '\n') AS detalle_pendientes, " +
-                     "COALESCE(SUM(s.total - COALESCE(i.precio, 0)), 0) AS suma_sesiones, " +
-                     "COALESCE(SUM(COALESCE(i.precio, 0)), 0) AS suma_medicamentos, " +
-                     "COALESCE(SUM(s.total), 0) AS ingresos " +
-                     "FROM sesiones s LEFT JOIN insumos i ON s.medicamentos = i.nombre " +
-                     "WHERE CAST(s.fecha AS DATE) = ? AND s.estado_pago <> 'SALDADO'";
+        String sql = """
+SELECT 
+    STRING_AGG(s.paciente || ' ($' || 
+        (s.total - COALESCE(i.precio, 0)) || ')', '\n') AS sesiones,
+
+    STRING_AGG(
+        CASE 
+            WHEN s.medicamentos IS NOT NULL 
+             AND s.medicamentos <> '' 
+             AND UPPER(s.medicamentos) <> 'NINGUNO'
+        THEN s.paciente || ' (' || s.medicamentos || ') - $' 
+             || COALESCE(i.precio, 0)
+        END, '\n') AS adicionales,
+
+    STRING_AGG(
+        CASE 
+            WHEN s.estado_pago = 'CREDITO' 
+        THEN s.paciente || ' ($' || s.total || ')'
+        END, '\n') AS detalle_pendientes,
+
+    COALESCE(SUM(s.total - COALESCE(i.precio, 0)), 0) AS suma_sesiones,
+    COALESCE(SUM(COALESCE(i.precio, 0)), 0) AS suma_medicamentos,
+    COALESCE(SUM(s.total), 0) AS ingresos
+
+FROM sesiones s
+LEFT JOIN insumos i ON s.medicamentos = i.nombre
+
+WHERE CAST(s.fecha AS DATE) = ?
+AND s.estado_pago <> 'SALDADO'
+""";
         try (Connection conn = ConexionDB.getInstance();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setDate(1, Date.valueOf(fecha));
