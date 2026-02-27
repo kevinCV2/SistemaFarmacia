@@ -195,22 +195,44 @@ public class CortesSemanalesView {
     }
 
     private void cargarDatosDesdeBD() {
+
+        tablaCortes.getItems().clear();
+
         try (Connection conn = ConexionDB.getInstance()) {
-            String sql = "SELECT c.nombre AS cat, m.nombre AS med, m.stock FROM categorias c JOIN medicamentos m ON m.id_categoria = c.id_categoria ORDER BY c.id_categoria, m.nombre;";
+
+            String sql = """
+            SELECT nombre,
+                   existencia,
+                   entrada,
+                   salidas,
+                   inventario_final
+            FROM medicamentos
+            ORDER BY nombre
+        """;
+
             Statement stmt = conn.createStatement();
             ResultSet rs = stmt.executeQuery(sql);
-            String catActual = "";
+
             int n = 1;
+
             while (rs.next()) {
-                String cat = rs.getString("cat");
-                if (!cat.equals(catActual)) {
-                    tablaCortes.getItems().add(new CorteRenglon(cat));
-                    catActual = cat;
-                    n = 1;
-                }
-                tablaCortes.getItems().add(new CorteRenglon(String.valueOf(n++), "PZA", rs.getString("med"), rs.getString("stock"), "0", "0", rs.getString("stock")));
+
+                tablaCortes.getItems().add(
+                        new CorteRenglon(
+                                String.valueOf(n++),
+                                "PZA",
+                                rs.getString("nombre"),
+                                String.valueOf(rs.getInt("existencia")),
+                                String.valueOf(rs.getInt("entrada")),
+                                String.valueOf(rs.getInt("salidas")),
+                                String.valueOf(rs.getInt("inventario_final"))
+                        )
+                );
             }
-        } catch (Exception e) { e.printStackTrace(); }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private TableView<CorteRenglon> createTable() {
