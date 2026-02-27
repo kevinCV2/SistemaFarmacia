@@ -20,7 +20,7 @@ import java.text.NumberFormat;
 import java.util.Locale;
 
 /**
- * Vista principal del Dashboard con 8 módulos y estadísticas en tiempo real.
+ * Vista principal del Dashboard con estadísticas vinculadas a la tabla INSUMOS.
  */
 public class DashboardView {
 
@@ -39,8 +39,16 @@ public class DashboardView {
 
         // --- TARJETAS DE ESTADÍSTICAS ---
         HBox stats = new HBox(20);
-        String totalMeds = obtenerConteoBase("SELECT COUNT(*) FROM medicamentos");
-        String stockBajo = obtenerConteoBase("SELECT COUNT(*) FROM medicamentos WHERE stock <= stock_minimo");
+        
+        // CORRECCIÓN CLAVE: 
+        // Como insertamos los medicamentos en la tabla 'insumos' con categoría 'MEDICAMENTOS',
+        // la consulta debe ser ésta para que NO marque 0:
+        String totalMeds = obtenerConteoBase("SELECT COUNT(*) FROM public.insumos WHERE categoria = 'MEDICAMENTOS'");
+        
+        // Para el stock bajo en insumos (ya que no tienen stock_minimo en el DER), 
+        // usaremos una base de 5 unidades por defecto:
+        String stockBajo = obtenerConteoBase("SELECT COUNT(*) FROM public.insumos WHERE stock <= 5");
+        
         String ventasHoy = obtenerVentasHoy();
 
         Region card1 = UIComponents.statCard("Total Medicamentos", totalMeds, "/sistemafarmacia/assets/icons/Productos1.png");
@@ -52,7 +60,7 @@ public class DashboardView {
         HBox.setHgrow(card3, Priority.ALWAYS);
         stats.getChildren().addAll(card1, card2, card3);
 
-        // --- GRID DE MÓDULOS (8 Módulos) ---
+        // --- GRID DE MÓDULOS ---
         GridPane grid = new GridPane();
         grid.setHgap(20); 
         grid.setVgap(20);
@@ -93,8 +101,6 @@ public class DashboardView {
         return container;
     }
 
-    // --- MÉTODOS DE LÓGICA DE DATOS ---
-
     private String obtenerConteoBase(String sql) {
         try (Connection conn = ConexionDB.getInstance();
              PreparedStatement ps = conn.prepareStatement(sql);
@@ -107,7 +113,7 @@ public class DashboardView {
     }
 
     private String obtenerVentasHoy() {
-        String sql = "SELECT SUM(total) FROM tickets WHERE CAST(fecha AS DATE) = CURRENT_DATE";
+        String sql = "SELECT SUM(total) FROM public.tickets WHERE CAST(fecha AS DATE) = CURRENT_DATE";
         try (Connection conn = ConexionDB.getInstance();
              PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {

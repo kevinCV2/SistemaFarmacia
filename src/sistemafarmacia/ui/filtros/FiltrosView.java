@@ -30,7 +30,6 @@ public class FiltrosView {
         VBox content = new VBox(20);
         content.setPadding(new Insets(20));
 
-        // --- TOP BAR ---
         HBox topBar = new HBox(25);
         topBar.setAlignment(Pos.CENTER_LEFT);
 
@@ -48,14 +47,13 @@ public class FiltrosView {
 
         topBar.getChildren().addAll(btnVolver, headerText);
 
-        // --- TABLA ---
         table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         table.setStyle("-fx-base: #1f2933; -fx-control-inner-background: #111827; -fx-background-color: #111827;");
 
         table.getColumns().add(createColumn("ID", 0, Pos.CENTER, false));
         table.getColumns().add(createColumn("No.", 1, Pos.CENTER, true));
-        table.getColumns().add(createColumn("Presentación", 2, Pos.CENTER_LEFT, true));
+        table.getColumns().add(createColumn("Nombre", 2, Pos.CENTER_LEFT, true));
         table.getColumns().add(createColumn("Descripción", 3, Pos.CENTER_LEFT, true));
         table.getColumns().add(createColumn("Inicial", 4, Pos.CENTER, true));
         table.getColumns().add(createColumn("Entrada", 5, Pos.CENTER, true));
@@ -69,8 +67,8 @@ public class FiltrosView {
             private final HBox box = new HBox(8, btnMov, btnDelete);
             {
                 box.setAlignment(Pos.CENTER);
-                btnMov.setStyle("-fx-background-color:#10b981; -fx-text-fill:white; -fx-cursor:hand;");
-                btnDelete.setStyle("-fx-background-color:#dc2626; -fx-text-fill:white; -fx-cursor:hand;");
+                btnMov.setStyle("-fx-background-color:#10b981; -fx-text-fill:white;");
+                btnDelete.setStyle("-fx-background-color:#dc2626; -fx-text-fill:white;");
 
                 btnMov.setOnAction(e -> abrirVentanaMovimiento(getTableView().getItems().get(getIndex())));
                 btnDelete.setOnAction(e -> confirmarEliminacion(Integer.parseInt(getTableView().getItems().get(getIndex()).get(0).toString())));
@@ -106,6 +104,7 @@ public class FiltrosView {
 
         ComboBox<String> cbTipo = new ComboBox<>(FXCollections.observableArrayList("ENTRADA", "SALIDA"));
         cbTipo.setValue("ENTRADA");
+
         TextField txtCantidad = new TextField();
         txtCantidad.setPromptText("Cantidad");
 
@@ -113,10 +112,16 @@ public class FiltrosView {
         btnGuardar.setStyle("-fx-background-color:#2563eb; -fx-text-fill:white;");
         btnGuardar.setOnAction(e -> {
             try {
-                registrarMovimientoInDB(Integer.parseInt(row.get(0).toString()), cbTipo.getValue(), Integer.parseInt(txtCantidad.getText()));
+                registrarMovimientoInDB(
+                        Integer.parseInt(row.get(0).toString()),
+                        cbTipo.getValue(),
+                        Integer.parseInt(txtCantidad.getText())
+                );
                 modal.close();
                 actualizarTabla();
-            } catch (Exception ex) { ex.printStackTrace(); }
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
         });
 
         layout.getChildren().addAll(new Label("Tipo:"), cbTipo, new Label("Cantidad:"), txtCantidad, btnGuardar);
@@ -124,34 +129,40 @@ public class FiltrosView {
         modal.showAndWait();
     }
 
-    private void registrarMovimientoInDB(int id, String tipo, int cantidad) {
-        // CORRECCIÓN: Nombre de tabla movimientos_inventario y uso de NOW()
+    private void registrarMovimientoInDB(int idInsumo, String tipo, int cantidad) {
         String sql = "INSERT INTO movimientos_inventario (id_medicamento, tipo, cantidad, fecha) VALUES (?, ?, ?, NOW())";
         try (Connection conn = ConexionDB.getInstance();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setInt(1, id);
+
+            ps.setInt(1, idInsumo); // reutilizamos id_medicamento
             ps.setString(2, tipo);
             ps.setInt(3, cantidad);
             ps.executeUpdate();
-        } catch (Exception e) { e.printStackTrace(); }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private ObservableList<ObservableList<Object>> getFiltrosFromDB() {
+
         ObservableList<ObservableList<Object>> data = FXCollections.observableArrayList();
-        
-        // CORRECCIÓN POSTGRESQL: date_trunc para semanas, ILIKE para búsqueda insensible a mayúsculas
-        // y GROUP BY completo.
+
         String sql = """
             SELECT 
-                m.id_medicamento, m.nombre, m.descripcion, m.stock AS stock_inicial,
-                COALESCE(SUM(CASE WHEN mov.tipo = 'ENTRADA' THEN mov.cantidad ELSE 0 END), 0) AS entradas,
-                COALESCE(SUM(CASE WHEN mov.tipo = 'SALIDA' THEN mov.cantidad ELSE 0 END), 0) AS salidas
-            FROM medicamentos m
-            LEFT JOIN movimientos_inventario mov ON m.id_medicamento = mov.id_medicamento 
-                 AND mov.fecha >= date_trunc('week', CURRENT_DATE)
-            WHERE m.nombre ILIKE '%Filtro%'
-            GROUP BY m.id_medicamento, m.nombre, m.descripcion, m.stock
-            ORDER BY m.nombre
+                i.id_insumo,
+                i.nombre,
+                i.precio,
+                i.stock AS stock_inicial,
+                COALESCE(SUM(CASE WHEN mov.tipo='ENTRADA' THEN mov.cantidad END),0) AS entradas,
+                COALESCE(SUM(CASE WHEN mov.tipo='SALIDA' THEN mov.cantidad END),0) AS salidas
+            FROM insumos i
+            LEFT JOIN movimientos_inventario mov
+                ON i.id_insumo = mov.id_medicamento
+                AND mov.fecha >= date_trunc('week', CURRENT_DATE)
+            WHERE i.nombre ILIKE '%Filtro%'
+            GROUP BY i.id_insumo, i.nombre, i.precio, i.stock
+            ORDER BY i.nombre
         """;
 
         try (Connection conn = ConexionDB.getInstance();
@@ -159,18 +170,30 @@ public class FiltrosView {
              ResultSet rs = stmt.executeQuery(sql)) {
 
             int i = 1;
+
             while (rs.next()) {
+
                 int inicial = rs.getInt("stock_inicial");
                 int ent = rs.getInt("entradas");
                 int sal = rs.getInt("salidas");
                 int stockFinal = inicial + ent - sal;
 
                 data.add(FXCollections.observableArrayList(
-                    rs.getInt("id_medicamento"), i++, rs.getString("nombre"),
-                    rs.getString("descripcion"), inicial, ent, sal, stockFinal
+                        rs.getInt("id_insumo"),
+                        i++,
+                        rs.getString("nombre"),
+                        "Precio: $" + rs.getDouble("precio"),
+                        inicial,
+                        ent,
+                        sal,
+                        stockFinal
                 ));
             }
-        } catch (Exception e) { e.printStackTrace(); }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
         return data;
     }
 
@@ -179,12 +202,12 @@ public class FiltrosView {
         confirm.showAndWait().ifPresent(response -> {
             if (response == ButtonType.OK) {
                 try (Connection conn = ConexionDB.getInstance();
-                     PreparedStatement ps = conn.prepareStatement("DELETE FROM medicamentos WHERE id_medicamento=?")) {
+                     PreparedStatement ps = conn.prepareStatement("DELETE FROM insumos WHERE id_insumo=?")) {
                     ps.setInt(1, id);
                     ps.executeUpdate();
                     actualizarTabla();
-                } catch (Exception e) { 
-                    new Alert(Alert.AlertType.ERROR, "No se pudo eliminar: existen registros asociados.").show();
+                } catch (Exception e) {
+                    new Alert(Alert.AlertType.ERROR, "No se pudo eliminar.").show();
                 }
             }
         });
@@ -198,5 +221,7 @@ public class FiltrosView {
         return col;
     }
 
-    public BorderPane getRoot() { return root; }
+    public BorderPane getRoot() {
+        return root;
+    }
 }
