@@ -4,7 +4,7 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.print.PrinterJob;
+import javafx.print.*;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
@@ -15,7 +15,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
-import javafx.scene.transform.Scale;
+import javafx.stage.Stage;
 import sistemafarmacia.utils.UIComponents;
 import sistemafarmacia.utils.ConexionDB;
 
@@ -23,6 +23,7 @@ import java.sql.*;
 import java.text.NumberFormat;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.format.TextStyle;
 import java.time.temporal.TemporalAdjusters;
 import java.util.Locale;
@@ -32,8 +33,8 @@ public class CortesSesiones {
     private BorderPane root;
     private TableView<CorteDiario> tablaSesiones;
     private DatePicker datePickerSemana;
-    private Label lblTotalSemanal;
-    private Label lblSesionesTotales;
+    private Label lblIngresosTotales; // Card Izquierda
+    private Label lblCortesGenerados; // Card Derecha
     private Runnable actionVolver;
 
     public CortesSesiones(Runnable actionVolver) {
@@ -44,141 +45,306 @@ public class CortesSesiones {
         VBox content = new VBox(20);
         content.setPadding(new Insets(20));
 
-        // ─── TOP BAR ───
+        // --- BARRA SUPERIOR ---
         HBox topBar = new HBox(25);
         topBar.setAlignment(Pos.CENTER_LEFT);
-
         Button btnVolver = new Button("⬅ Volver");
         btnVolver.setStyle("-fx-background-color: transparent; -fx-text-fill: #9ca3af; -fx-border-color: #374151; -fx-border-radius: 5; -fx-cursor: hand;");
         btnVolver.setOnAction(e -> { if (actionVolver != null) actionVolver.run(); });
 
         VBox headerText = new VBox(5);
-        Label title = new Label("Control de Sesiones");
+        Label title = new Label("Control de Sesiones e Ingresos");
         title.setFont(Font.font("System", FontWeight.BOLD, 28));
         title.setTextFill(Color.WHITE);
-        Label subtitle = new Label("Reporte Semanal de Ingresos");
-        subtitle.setTextFill(Color.web("#9ca3af"));
-
-        headerText.getChildren().addAll(title, subtitle);
+        headerText.getChildren().addAll(
+                title,
+                new Label("Reporte Semanal de Movimientos") {{ setTextFill(Color.web("#9ca3af")); }}
+        );
         topBar.getChildren().addAll(btnVolver, headerText);
 
-        // ─── STATS ───
+        // --- PANEL DE ESTADÍSTICAS (IZQUIERDA: Ingresos | DERECHA: Cortes) ---
         HBox statsPanel = new HBox(20);
-        statsPanel.setAlignment(Pos.CENTER_LEFT);
+        
+        VBox cardIngresos = (VBox) UIComponents.statCard("Ingresos", "$0.00", "/sistemafarmacia/assets/icons/Ventas2.png");
+        VBox cardCortes = (VBox) UIComponents.statCard("Cortes Generados", "0", "/sistemafarmacia/assets/icons/Cortes semanales.png");
+        
+        HBox.setHgrow(cardIngresos, Priority.ALWAYS);
+        HBox.setHgrow(cardCortes, Priority.ALWAYS);
+        
+        // Extraer labels para actualización dinámica
+        lblIngresosTotales = obtenerLabelValor(cardIngresos);
+        lblCortesGenerados = obtenerLabelValor(cardCortes);
+        
+        statsPanel.getChildren().addAll(cardIngresos, cardCortes);
 
-        VBox cardVentas = (VBox) UIComponents.statCard("Ventas Semanales", "$0.00", "/sistemafarmacia/assets/icons/Ventas2.png");
-        VBox cardSesiones = (VBox) UIComponents.statCard("Cortes Generados", "0", "/sistemafarmacia/assets/icons/Cortes semanales.png");
-        HBox.setHgrow(cardVentas, Priority.ALWAYS);
-        HBox.setHgrow(cardSesiones, Priority.ALWAYS);
-
-        lblTotalSemanal = obtenerLabelValor(cardVentas);
-        lblSesionesTotales = obtenerLabelValor(cardSesiones);
-
-        statsPanel.getChildren().addAll(cardVentas, cardSesiones);
-
-        // ─── TOOLBAR ───
+        // --- HERRAMIENTAS (FILTRO Y BOTONES) ---
         HBox toolbar = new HBox(15);
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.setStyle("-fx-background-color: #111827; -fx-padding: 15; -fx-background-radius: 10;");
-
-        Label lblSelect = new Label("Seleccionar Semana:");
-        lblSelect.setTextFill(Color.WHITE);
-
+        
         datePickerSemana = new DatePicker(LocalDate.now());
         datePickerSemana.setOnAction(e -> cargarDatos());
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button btnPrint = new Button("🖨 Imprimir Formato");
-        btnPrint.setStyle("-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 8 15; -fx-cursor: hand;");
-        btnPrint.setOnAction(e -> imprimirReporte());
+        Button btnImprimir = new Button("🖨 Imprimir Reporte");
+        btnImprimir.setStyle("-fx-background-color: #10b981; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;");
+        btnImprimir.setOnAction(e -> imprimirReporteSesiones());
 
-        toolbar.getChildren().addAll(lblSelect, datePickerSemana, spacer, btnPrint);
+        toolbar.getChildren().addAll(
+                new Label("Semana del Lunes:") {{ setTextFill(Color.WHITE); }}, 
+                datePickerSemana, 
+                spacer, 
+                btnImprimir
+        );
 
-        // ─── TABLE ───
+        // --- TABLA DE DATOS ---
         tablaSesiones = new TableView<>();
         tablaSesiones.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
-        tablaSesiones.setStyle("-fx-base: #1f2933; -fx-control-inner-background: #111827; -fx-table-cell-border-color: #374151;");
-
-        configurarColumnas(tablaSesiones, false);
+        tablaSesiones.setStyle("-fx-base: #1f2933; -fx-control-inner-background: #111827;");
+        configurarColumnasSesiones(tablaSesiones);
 
         VBox.setVgrow(tablaSesiones, Priority.ALWAYS);
         content.getChildren().addAll(topBar, statsPanel, toolbar, tablaSesiones);
         root.setCenter(content);
-
+        
         cargarDatos();
     }
 
-    private void configurarColumnas(TableView<CorteDiario> tabla, boolean esImpresion) {
-        // Día
+    private void configurarColumnasSesiones(TableView<CorteDiario> tabla) {
         TableColumn<CorteDiario, String> colFecha = new TableColumn<>("DÍA");
         colFecha.setCellValueFactory(new PropertyValueFactory<>("fechaLabel"));
-        colFecha.setCellFactory(tc -> new TableCell<>() {
-            @Override protected void updateItem(String item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) setText(null);
-                else {
-                    setText(item);
-                    setTextFill(esImpresion ? Color.BLACK : Color.WHITE);
-                }
-            }
-        });
 
-        // Sesiones y Adicionales (Texto)
-        TableColumn<CorteDiario, String> colSes = crearColumnaAjustable("SESIONES", "sesiones", esImpresion, Color.WHITE);
-        TableColumn<CorteDiario, String> colAdic = crearColumnaAjustable("ADICIONALES", "adicionales", esImpresion, Color.WHITE);
-        
-        // PENDIENTES (NARANJA)
-        TableColumn<CorteDiario, String> colPend = crearColumnaAjustable("PENDIENTES", "pendientes", esImpresion, Color.web("#fb923c"));
-        
-        // INGRESOS (VERDE)
-        TableColumn<CorteDiario, Double> colSumSes = crearColumnaNumerica("INGRESOS", "sumaSesiones", esImpresion, Color.web("#4ade80"), false);
-        
-        // ADIC. $ (AZUL)
-        TableColumn<CorteDiario, Double> colSumMed = crearColumnaNumerica("ADICIONALES", "sumaMedicamentos", esImpresion, Color.web("#60a5fa"), false);
-        
-        // Neto (Eliminado Gastos, pasamos directo al Neto)
-        TableColumn<CorteDiario, Double> colNeto = crearColumnaNumerica("NETO", "neto", esImpresion, Color.web("#34d399"), true);
+        TableColumn<CorteDiario, String> colSes = crearColumnaAjustable("SESIONES", "sesiones", Color.WHITE);
+        TableColumn<CorteDiario, String> colAdic = crearColumnaAjustable("ADICIONALES", "adicionales", Color.WHITE);
+        TableColumn<CorteDiario, String> colPend = crearColumnaAjustable("PENDIENTES", "pendientes", Color.web("#fb923c"));
 
-        tabla.getColumns().setAll(colFecha, colSes, colAdic, colPend, colSumSes, colSumMed, colNeto);
+        // Columna de Ingresos (Verde)
+        TableColumn<CorteDiario, Double> colIngresos = crearColumnaNumerica("INGRESOS $", "sumaSesiones", Color.web("#4ade80"), true);
+        TableColumn<CorteDiario, Double> colAdicMonto = crearColumnaNumerica("ADICIONALES $", "sumaMedicamentos", Color.web("#60a5fa"), false);
+
+        TableColumn<CorteDiario, String> colGastosDetalle = crearColumnaAjustable("DETALLE GASTOS", "detalleGastos", Color.web("#f87171"));
+        TableColumn<CorteDiario, Double> colGastosMonto = crearColumnaNumerica("MONTO GASTO", "gastos", Color.web("#f87171"), false);
+        TableColumn<CorteDiario, Double> colNetoOp = crearColumnaNumerica("NETO OP.", "netoOperativo", Color.web("#34d399"), true);
+
+        TableColumn<CorteDiario, String> colInvDetalle = crearColumnaAjustable("DETALLE INVERSIÓN", "detalleInversion", Color.web("#c084fc"));
+        TableColumn<CorteDiario, Double> colInv = crearColumnaNumerica("INVERSIÓN", "inversion", Color.web("#c084fc"), false);
+        TableColumn<CorteDiario, Double> colNetoAdic = crearColumnaNumerica("NETO ADIC.", "netoInversion", Color.web("#38bdf8"), true);
+
+        tabla.getColumns().setAll(
+                colFecha, colSes, colAdic, colPend,
+                colIngresos, colAdicMonto,
+                colGastosDetalle, colGastosMonto,
+                colNetoOp,
+                colInvDetalle, colInv,
+                colNetoAdic
+        );
     }
 
-    private TableColumn<CorteDiario, Double> crearColumnaNumerica(String titulo, String propiedad, boolean esImpresion, Color colorApp, boolean esNegrita) {
+    private void cargarDatos() {
+        ObservableList<CorteDiario> lista = FXCollections.observableArrayList();
+        LocalDate lunes = datePickerSemana.getValue().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+
+        double totalIngresosVerde = 0;
+        int conteoCortes = 0;
+
+        for (int i = 0; i < 6; i++) {
+            CorteDiario cd = consultarBaseDatos(lunes.plusDays(i));
+            lista.add(cd);
+            
+            // Sumamos el valor de la columna "INGRESOS $"
+            totalIngresosVerde += cd.getSumaSesiones();
+            
+            // Si el día tiene algún registro (sesiones o adicionales), se cuenta como corte
+            if (!cd.getSesiones().equals("—") || !cd.getAdicionales().equals("—")) {
+                conteoCortes++;
+            }
+        }
+
+        tablaSesiones.setItems(lista);
+        
+        // Actualizar Cards
+        lblIngresosTotales.setText(NumberFormat.getCurrencyInstance(Locale.US).format(totalIngresosVerde));
+        lblCortesGenerados.setText(String.valueOf(conteoCortes));
+    }
+
+    private CorteDiario consultarBaseDatos(LocalDate fecha) {
+        String sql =
+                "SELECT " +
+                " STRING_AGG(s.paciente || ' ($' || (s.total - COALESCE(i.precio,0)) || ')','\n') AS sesiones," +
+                " STRING_AGG(CASE WHEN s.medicamentos IS NOT NULL AND UPPER(s.medicamentos) <> 'NINGUNO' " +
+                " THEN s.paciente || ' (' || s.medicamentos || ') - $' || COALESCE(i.precio,0) END,'\n') AS adicionales," +
+                " STRING_AGG(CASE WHEN s.estado_pago='CREDITO' THEN s.paciente || ' ($' || s.total || ')' END,'\n') AS detalle_pendientes," +
+                " (SELECT STRING_AGG(nombre || ' (' || descripcion || ') - $' || monto,'\n') FROM gastos WHERE CAST(dia AS DATE)=?) AS detalle_gastos," +
+                " (SELECT STRING_AGG(nombre || ' (' || descripcion || ') - $' || monto,'\n') FROM inversiones_adicionales WHERE CAST(dia AS DATE)=?) AS detalle_inversion," +
+                " COALESCE(SUM(s.total - COALESCE(i.precio,0)),0) AS suma_sesiones," +
+                " COALESCE(SUM(COALESCE(i.precio,0)),0) AS suma_medicamentos," +
+                " (SELECT COALESCE(SUM(monto),0) FROM gastos WHERE CAST(dia AS DATE)=?) AS total_gastos," +
+                " (SELECT COALESCE(SUM(monto),0) FROM inversiones_adicionales WHERE CAST(dia AS DATE)=?) AS total_inv " +
+                "FROM sesiones s LEFT JOIN insumos i ON s.medicamentos=i.nombre " +
+                "WHERE CAST(s.fecha AS DATE)=? AND s.estado_pago<>'SALDADO'";
+
+        try (Connection conn = ConexionDB.getInstance();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setDate(1, Date.valueOf(fecha));
+            ps.setDate(2, Date.valueOf(fecha));
+            ps.setDate(3, Date.valueOf(fecha));
+            ps.setDate(4, Date.valueOf(fecha));
+            ps.setDate(5, Date.valueOf(fecha));
+
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                return new CorteDiario(
+                        fecha,
+                        rs.getString("sesiones") != null ? rs.getString("sesiones") : "—",
+                        rs.getString("adicionales") != null ? rs.getString("adicionales") : "—",
+                        rs.getString("detalle_pendientes") != null ? rs.getString("detalle_pendientes") : "—",
+                        rs.getString("detalle_gastos") != null ? rs.getString("detalle_gastos") : "—",
+                        rs.getString("detalle_inversion") != null ? rs.getString("detalle_inversion") : "—",
+                        rs.getDouble("suma_sesiones"),
+                        rs.getDouble("suma_medicamentos"),
+                        rs.getDouble("total_gastos"),
+                        rs.getDouble("total_inv")
+                );
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return new CorteDiario(fecha, "—", "—", "—", "—", "—", 0, 0, 0, 0);
+    }
+
+    private void imprimirReporteSesiones() {
+        PrinterJob job = PrinterJob.createPrinterJob();
+        if (job == null) return;
+        
+        Printer printer = job.getPrinter();
+        PageLayout layout = printer.createPageLayout(Paper.A4, PageOrientation.LANDSCAPE, Printer.MarginType.HARDWARE_MINIMUM);
+        job.getJobSettings().setPageLayout(layout);
+
+        Stage stage = (Stage) root.getScene().getWindow();
+        if (!job.showPrintDialog(stage)) return;
+
+        double pWidth = layout.getPrintableWidth();
+        VBox page = new VBox(10);
+        page.setPadding(new Insets(10));
+        page.setStyle("-fx-background-color: white;");
+
+        // Cabecera del Reporte Impreso
+        HBox header = new HBox(15);
+        header.setAlignment(Pos.CENTER_LEFT);
+        try {
+            ImageView logo = new ImageView(new Image(getClass().getResourceAsStream("/sistemafarmacia/assets/icons/logo.png")));
+            logo.setFitWidth(60); logo.setPreserveRatio(true);
+            header.getChildren().add(logo);
+        } catch (Exception e) {}
+
+        LocalDate lunes = datePickerSemana.getValue().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate sabado = lunes.plusDays(5);
+        String rango = lunes.getDayOfMonth() + " al " + sabado.getDayOfMonth() + " de " + 
+                       lunes.getMonth().getDisplayName(TextStyle.FULL, new Locale("es")).toUpperCase();
+
+        VBox headerText = new VBox(0);
+        Label title = new Label("CORTE SEMANAL DE CAJA Y SESIONES");
+        title.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+        Label info = new Label("Semana: " + rango + " | " + lunes.getYear() + " | Generado: " + LocalTime.now().withNano(0));
+        info.setFont(Font.font("Arial", 8));
+        headerText.getChildren().addAll(title, info);
+        header.getChildren().add(headerText);
+
+        GridPane grid = new GridPane();
+        grid.setGridLinesVisible(true);
+        grid.setPrefWidth(pWidth);
+
+        String[] headers = {"DÍA", "SESIONES", "ADICIONALES", "PENDIENTES", "INGRESOS", "ADIC. $", "GASTOS", "MONTO G.", "NETO OP.", "INV.", "MONTO I.", "NETO ADIC."};
+        double[] pesos = {6, 13, 13, 10, 7, 7, 10, 7, 7, 10, 7, 7}; 
+
+        for (int i = 0; i < headers.length; i++) {
+            ColumnConstraints col = new ColumnConstraints();
+            col.setPercentWidth(pesos[i]);
+            grid.getColumnConstraints().add(col);
+
+            Label h = new Label(headers[i]);
+            h.setFont(Font.font("Arial", FontWeight.BOLD, 7.5));
+            h.setPadding(new Insets(3));
+            h.setAlignment(Pos.CENTER);
+            h.setMaxWidth(Double.MAX_VALUE);
+            h.setStyle("-fx-background-color: #f2f2f2;");
+            grid.add(h, i, 0);
+        }
+
+        int rowIdx = 1;
+        for (CorteDiario item : tablaSesiones.getItems()) {
+            grid.add(crearCeldaImp(item.getFechaLabel(), Pos.CENTER_LEFT, Color.BLACK), 0, rowIdx);
+            grid.add(crearCeldaImp(item.getSesiones(), Pos.TOP_LEFT, Color.BLACK), 1, rowIdx);
+            grid.add(crearCeldaImp(item.getAdicionales(), Pos.TOP_LEFT, Color.BLACK), 2, rowIdx);
+            grid.add(crearCeldaImp(item.getPendientes(), Pos.TOP_LEFT, Color.web("#fb923c")), 3, rowIdx);
+            grid.add(crearCeldaImp(String.format("$%.2f", item.getSumaSesiones()), Pos.CENTER_RIGHT, Color.web("#22c55e")), 4, rowIdx);
+            grid.add(crearCeldaImp(String.format("$%.2f", item.getSumaMedicamentos()), Pos.CENTER_RIGHT, Color.web("#3b82f6")), 5, rowIdx);
+            grid.add(crearCeldaImp(item.getDetalleGastos(), Pos.TOP_LEFT, Color.web("#ef4444")), 6, rowIdx);
+            grid.add(crearCeldaImp(String.format("$%.2f", item.getGastos()), Pos.CENTER_RIGHT, Color.web("#ef4444")), 7, rowIdx);
+            grid.add(crearCeldaImp(String.format("$%.2f", item.getNetoOperativo()), Pos.CENTER_RIGHT, Color.web("#10b981")), 8, rowIdx);
+            grid.add(crearCeldaImp(item.getDetalleInversion(), Pos.TOP_LEFT, Color.web("#a855f7")), 9, rowIdx);
+            grid.add(crearCeldaImp(String.format("$%.2f", item.getInversion()), Pos.CENTER_RIGHT, Color.web("#a855f7")), 10, rowIdx);
+            grid.add(crearCeldaImp(String.format("$%.2f", item.getNetoInversion()), Pos.CENTER_RIGHT, Color.web("#0ea5e9")), 11, rowIdx);
+            rowIdx++;
+        }
+
+        HBox footer = new HBox(10);
+        footer.setAlignment(Pos.CENTER_RIGHT);
+        Label totalTxt = new Label("INGRESOS TOTALES SEMANALES: " + lblIngresosTotales.getText());
+        totalTxt.setFont(Font.font("Arial", FontWeight.BOLD, 12));
+        footer.getChildren().add(totalTxt);
+
+        page.getChildren().addAll(header, new Separator(), grid, footer);
+
+        if (job.printPage(page)) {
+            job.endJob();
+        }
+    }
+
+    private Node crearCeldaImp(String texto, Pos alineacion, Color color) {
+        String contenido = (texto == null || texto.equals("—") || texto.isEmpty()) ? " " : texto;
+        Text t = new Text(contenido);
+        t.setFont(Font.font("Arial", 7.5));
+        t.setFill(color);
+        StackPane cell = new StackPane(t);
+        cell.setPadding(new Insets(2));
+        cell.setAlignment(alineacion);
+        t.wrappingWidthProperty().bind(cell.widthProperty().subtract(4));
+        return cell;
+    }
+
+    private TableColumn<CorteDiario, Double> crearColumnaNumerica(String titulo, String propiedad, Color color, boolean negrita) {
         TableColumn<CorteDiario, Double> col = new TableColumn<>(titulo);
         col.setCellValueFactory(new PropertyValueFactory<>(propiedad));
         col.setCellFactory(tc -> new TableCell<>() {
             @Override protected void updateItem(Double item, boolean empty) {
                 super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                    setStyle("");
-                } else {
-                    setText(String.format("%.1f", item));
-                    setTextFill(esImpresion ? Color.BLACK : colorApp);
-                    String estilo = "-fx-alignment: CENTER-RIGHT;";
-                    if (esNegrita) estilo += "-fx-font-weight: bold;";
-                    setStyle(estilo);
+                if (empty || item == null) setText(null);
+                else {
+                    setText(String.format("$%.2f", item));
+                    setTextFill(color);
+                    setStyle("-fx-alignment: CENTER-RIGHT;" + (negrita ? "-fx-font-weight: bold;" : ""));
                 }
             }
         });
         return col;
     }
 
-    private TableColumn<CorteDiario, String> crearColumnaAjustable(String titulo, String propiedad, boolean esImpresion, Color colorApp) {
+    private TableColumn<CorteDiario, String> crearColumnaAjustable(String titulo, String propiedad, Color color) {
         TableColumn<CorteDiario, String> col = new TableColumn<>(titulo);
         col.setCellValueFactory(new PropertyValueFactory<>(propiedad));
         col.setCellFactory(tc -> new TableCell<>() {
             private final Text text = new Text();
-            @Override
-            protected void updateItem(String item, boolean empty) {
+            @Override protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setGraphic(null);
-                } else {
+                if (empty || item == null) setGraphic(null);
+                else {
                     text.setText(item);
-                    text.setFill(esImpresion ? Color.BLACK : colorApp);
-                    text.wrappingWidthProperty().bind(col.widthProperty().subtract(15));
+                    text.setFill(color);
+                    text.wrappingWidthProperty().bind(col.widthProperty().subtract(10));
                     setGraphic(text);
                 }
             }
@@ -186,152 +352,52 @@ public class CortesSesiones {
         return col;
     }
 
-    private void imprimirReporte() {
-        VBox hoja = new VBox(15);
-        hoja.setPadding(new Insets(25));
-        hoja.setStyle("-fx-background-color: white;");
-        hoja.setPrefWidth(850); 
-
-        HBox header = new HBox(20);
-        header.setAlignment(Pos.CENTER_LEFT);
-        
-        ImageView logoView = new ImageView();
-        try {
-            String ruta = "/sistemafarmacia/assets/logo.jpeg";
-            var url = getClass().getResource(ruta);
-            if (url != null) {
-                logoView.setImage(new Image(url.toExternalForm()));
-                logoView.setFitHeight(80);
-                logoView.setPreserveRatio(true);
-            }
-        } catch (Exception e) {}
-
-        VBox textHeader = new VBox(2);
-        Label t1 = new Label("REPORTE SEMANAL DE SESIONES");
-        t1.setStyle("-fx-font-size: 18; -fx-font-weight: bold; -fx-text-fill: black;");
-        LocalDate lunes = datePickerSemana.getValue().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
-        Label t2 = new Label("Periodo: " + lunes + " al " + lunes.plusDays(5));
-        t2.setStyle("-fx-font-size: 12; -fx-text-fill: #333;");
-        textHeader.getChildren().addAll(t1, t2);
-        
-        if (logoView.getImage() != null) header.getChildren().add(logoView);
-        header.getChildren().add(textHeader);
-
-        TableView<CorteDiario> tablaPrint = new TableView<>();
-        tablaPrint.setItems(tablaSesiones.getItems());
-        tablaPrint.setStyle("-fx-background-color: white; -fx-control-inner-background: white; -fx-table-cell-border-color: #ccc; -fx-font-size: 9pt;");
-        configurarColumnas(tablaPrint, true);
-        tablaPrint.setPrefHeight(650);
-        tablaPrint.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
-
-        Label total = new Label("TOTAL NETO SEMANAL: " + lblTotalSemanal.getText());
-        total.setStyle("-fx-font-size: 14pt; -fx-font-weight: bold; -fx-text-fill: black;");
-        HBox footer = new HBox(total);
-        footer.setAlignment(Pos.CENTER_RIGHT);
-
-        hoja.getChildren().addAll(header, new Separator(), tablaPrint, footer);
-
-        PrinterJob job = PrinterJob.createPrinterJob();
-        if (job != null && job.showPrintDialog(root.getScene().getWindow())) {
-            double pWidth = job.getJobSettings().getPageLayout().getPrintableWidth();
-            double scale = pWidth / hoja.getPrefWidth();
-            Scale scaling = new Scale(scale, scale);
-            scaling.setPivotX(0); scaling.setPivotY(0);
-            hoja.getTransforms().setAll(scaling);
-            if (job.printPage(hoja)) job.endJob();
-        }
-    }
-
-    private void cargarDatos() {
-        ObservableList<CorteDiario> lista = FXCollections.observableArrayList();
-        LocalDate lunes = datePickerSemana.getValue().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
-        double sumaSemana = 0;
-        int count = 0;
-        for (int i = 0; i < 6; i++) {
-            CorteDiario cd = consultarBaseDatos(lunes.plusDays(i));
-            lista.add(cd);
-            sumaSemana += cd.getNeto();
-            if(!cd.getSesiones().equals("—")) count++;
-        }
-        tablaSesiones.setItems(lista);
-        lblTotalSemanal.setText(NumberFormat.getCurrencyInstance(Locale.US).format(sumaSemana));
-        lblSesionesTotales.setText(String.valueOf(count));
-    }
-
-    private CorteDiario consultarBaseDatos(LocalDate fecha) {
-        String sql = """
-SELECT 
-    STRING_AGG(s.paciente || ' ($' || 
-        (s.total - COALESCE(i.precio, 0)) || ')', '\n') AS sesiones,
-
-    STRING_AGG(
-        CASE 
-            WHEN s.medicamentos IS NOT NULL 
-             AND s.medicamentos <> '' 
-             AND UPPER(s.medicamentos) <> 'NINGUNO'
-        THEN s.paciente || ' (' || s.medicamentos || ') - $' 
-             || COALESCE(i.precio, 0)
-        END, '\n') AS adicionales,
-
-    STRING_AGG(
-        CASE 
-            WHEN s.estado_pago = 'CREDITO' 
-        THEN s.paciente || ' ($' || s.total || ')'
-        END, '\n') AS detalle_pendientes,
-
-    COALESCE(SUM(s.total - COALESCE(i.precio, 0)), 0) AS suma_sesiones,
-    COALESCE(SUM(COALESCE(i.precio, 0)), 0) AS suma_medicamentos,
-    COALESCE(SUM(s.total), 0) AS ingresos
-
-FROM sesiones s
-LEFT JOIN insumos i ON s.medicamentos = i.nombre
-
-WHERE CAST(s.fecha AS DATE) = ?
-AND s.estado_pago <> 'SALDADO'
-""";
-        try (Connection conn = ConexionDB.getInstance();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setDate(1, Date.valueOf(fecha));
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
-                return new CorteDiario(fecha, 
-                    rs.getString("sesiones") != null ? rs.getString("sesiones") : "—",
-                    rs.getString("adicionales") != null ? rs.getString("adicionales") : "—",
-                    rs.getString("detalle_pendientes") != null ? rs.getString("detalle_pendientes") : "—",
-                    rs.getDouble("suma_sesiones"), rs.getDouble("suma_medicamentos"), rs.getDouble("ingresos")
-                );
-            }
-        } catch (Exception e) { e.printStackTrace(); }
-        return new CorteDiario(fecha, "—", "—", "—", 0, 0, 0);
-    }
-
     private Label obtenerLabelValor(VBox card) {
         for (Node n : card.getChildren()) {
             if (n instanceof Label) {
-                String txt = ((Label) n).getText();
-                if (txt.contains("$") || txt.matches("\\d+")) return (Label) n;
+                Label l = (Label) n;
+                // Detectamos el label que contiene el dato numérico/monto
+                if (l.getFont().getSize() > 18 || l.getText().contains("$") || l.getText().matches("\\d+")) {
+                    return l;
+                }
             }
         }
-        return new Label("$0.00");
+        return new Label("0");
     }
 
     public BorderPane getRoot() { return root; }
 
     public static class CorteDiario {
-        private String fechaLabel, sesiones, adicionales, pendientes;
-        private double sumaSesiones, sumaMedicamentos, neto;
-        public CorteDiario(LocalDate f, String s, String a, String p, double ss, double sm, double n) {
+        private String fechaLabel, sesiones, adicionales, pendientes, detalleGastos, detalleInversion;
+        private double sumaSesiones, sumaMedicamentos, gastos, inversion, netoOperativo, netoInversion;
+
+        public CorteDiario(LocalDate f, String s, String a, String p, String dg, String di,
+                           double ss, double sm, double g, double inv) {
             this.fechaLabel = f.getDayOfWeek().getDisplayName(TextStyle.FULL, new Locale("es")).toUpperCase() + " " + f.getDayOfMonth();
-            this.sesiones = s; this.adicionales = a; this.pendientes = p;
-            this.sumaSesiones = ss; this.sumaMedicamentos = sm;
-            this.neto = n;
+            this.sesiones = s;
+            this.adicionales = a;
+            this.pendientes = p;
+            this.detalleGastos = dg;
+            this.detalleInversion = di;
+            this.sumaSesiones = ss;
+            this.sumaMedicamentos = sm;
+            this.gastos = g;
+            this.inversion = inv;
+            this.netoOperativo = ss - g;
+            this.netoInversion = sm - inv;
         }
+
         public String getFechaLabel() { return fechaLabel; }
         public String getSesiones() { return sesiones; }
         public String getAdicionales() { return adicionales; }
         public String getPendientes() { return pendientes; }
+        public String getDetalleGastos() { return detalleGastos; }
+        public String getDetalleInversion() { return detalleInversion; }
         public double getSumaSesiones() { return sumaSesiones; }
         public double getSumaMedicamentos() { return sumaMedicamentos; }
-        public double getNeto() { return neto; }
+        public double getGastos() { return gastos; }
+        public double getInversion() { return inversion; }
+        public double getNetoOperativo() { return netoOperativo; }
+        public double getNetoInversion() { return netoInversion; }
     }
 }

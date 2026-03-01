@@ -1,6 +1,8 @@
 package sistemafarmacia.ui;
 
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.*;
 import sistemafarmacia.ui.catalogo.CatalogoView;
 import sistemafarmacia.ui.catalogo.CatalogoMedicamentoView;
@@ -10,6 +12,8 @@ import sistemafarmacia.ui.filtros.FiltrosView;
 import sistemafarmacia.ui.nuevoproducto.NuevoProductoView;
 import sistemafarmacia.ui.sesiones.SesionesView;
 import sistemafarmacia.ui.ticket.GenerarTicketView;
+import sistemafarmacia.ui.gastos.GastosView;
+import sistemafarmacia.ui.inversion.InversionAdicionalView;
 import sistemafarmacia.utils.ConexionDB;
 import sistemafarmacia.utils.UIComponents;
 
@@ -25,74 +29,95 @@ public class DashboardView {
         root = new BorderPane();
         root.setStyle("-fx-background-color: #1f2933;");
         root.setTop(UIComponents.createHeader());
-        root.setCenter(createCenter());
+        restaurarDashboard();
     }
 
     private VBox createCenter() {
         VBox container = new VBox(25);
         container.setPadding(new Insets(20));
+        container.setAlignment(Pos.TOP_CENTER);
 
-        // --- SECCIÓN DE ESTADÍSTICAS (AHORA CON 2 CARDS GRANDES) ---
+        // --- SECCIÓN DE ESTADÍSTICAS ---
         HBox stats = new HBox(20);
         
-        // 1. Conteo de Artículos Totales (Medicamentos + Insumos)
+        // 1. Total de artículos (Suma simple de ambas tablas)
         String sqlTotal = "SELECT (SELECT COUNT(*) FROM medicamentos) + (SELECT COUNT(*) FROM insumos)";
         String totalItems = obtenerConteoBase(sqlTotal);
         
-        // 2. Conteo de Stock Bajo (Menos de 10 unidades en cualquiera de las dos tablas)
-        String sqlBajo = "SELECT (SELECT COUNT(*) FROM medicamentos WHERE existencia < 10) + (SELECT COUNT(*) FROM insumos WHERE stock < 10)";
+        // 2. Stock Bajo (Calculado según Stock Final Semanal < 10)
+        // Esta consulta replica exactamente la lógica de tu CatalogoView
+        String sqlBajo = """
+            SELECT COUNT(*) FROM (
+                SELECT 
+                    m.id_medicamento,
+                    (m.existencia + 
+                     COALESCE((SELECT SUM(cantidad) FROM movimientos_inventario WHERE id_medicamento = m.id_medicamento AND tipo = 'ENTRADA' AND fecha >= date_trunc('week', CURRENT_DATE)), 0) - 
+                     COALESCE((SELECT SUM(cantidad) FROM movimientos_inventario WHERE id_medicamento = m.id_medicamento AND tipo = 'SALIDA' AND fecha >= date_trunc('week', CURRENT_DATE)), 0)
+                    ) as stock_final
+                FROM medicamentos m
+            ) subconsulta WHERE stock_final < 10
+        """;
         String stockBajo = obtenerConteoBase(sqlBajo);
 
-        // Creamos solo 2 tarjetas
         Region card1 = UIComponents.statCard("Artículos en Inventario", totalItems, "/sistemafarmacia/assets/icons/Productos1.png");
-        Region card2 = UIComponents.statCard("Productos con Stock Bajo", stockBajo, "/sistemafarmacia/assets/icons/Basura2.png");
+        Region card2 = UIComponents.statCard("Stock Bajo)", stockBajo, "/sistemafarmacia/assets/icons/Basura2.png");
         
-        // Hgrow asegura que se expandan para llenar el espacio
         HBox.setHgrow(card1, Priority.ALWAYS);
         HBox.setHgrow(card2, Priority.ALWAYS);
-        
         stats.getChildren().addAll(card1, card2);
 
         // --- GRILLA DE ACCESOS DIRECTOS ---
         GridPane grid = new GridPane();
-        grid.setHgap(20); 
-        grid.setVgap(20);
-        
-        // Configuración de 3 columnas iguales (33.33% cada una)
+        grid.setHgap(20); grid.setVgap(20);
         ColumnConstraints col = new ColumnConstraints();
         col.setPercentWidth(33.33);
         grid.getColumnConstraints().addAll(col, col, col);
 
-        // Fila 0
+        // Acciones referenciando a restaurarDashboard para refrescar el conteo al volver
         grid.add(UIComponents.bigCard("Catálogo de insumos", "#374151", "/sistemafarmacia/assets/icons/Catálogo.png",
-            () -> root.setCenter(new CatalogoView(() -> root.setCenter(createCenter())).getRoot())), 0, 0);
+            () -> actualizarCentro(new CatalogoView(this::restaurarDashboard).getRoot())), 0, 0);
 
         grid.add(UIComponents.bigCard("Catálogo de medicamentos", "#374151", "/sistemafarmacia/assets/icons/Catálogo.png",
-            () -> root.setCenter(new CatalogoMedicamentoView(() -> root.setCenter(createCenter())).getRoot())), 1, 0);
+            () -> actualizarCentro(new CatalogoMedicamentoView(this::restaurarDashboard).getRoot())), 1, 0);
 
         grid.add(UIComponents.bigCard("Nuevo Producto", "#374151", "/sistemafarmacia/assets/icons/Nuevo producto.png",
-            () -> root.setCenter(new NuevoProductoView(() -> root.setCenter(createCenter())).getRoot())), 2, 0);
+            () -> actualizarCentro(new NuevoProductoView(this::restaurarDashboard).getRoot())), 2, 0);
 
-        // Fila 1
         grid.add(UIComponents.bigCard("Sesiones y Ventas", "#374151", "/sistemafarmacia/assets/icons/Sesiones y ventas.png",
-            () -> root.setCenter(new SesionesView(() -> root.setCenter(createCenter())).getRoot())), 0, 1);
+            () -> actualizarCentro(new SesionesView(this::restaurarDashboard).getRoot())), 0, 1);
 
         grid.add(UIComponents.bigCard("Generar Ticket", "#374151", "/sistemafarmacia/assets/icons/Generar ticket.png",
-            () -> root.setCenter(new GenerarTicketView(() -> root.setCenter(createCenter())).getRoot())), 1, 1);
+            () -> actualizarCentro(new GenerarTicketView(this::restaurarDashboard).getRoot())), 1, 1);
 
         grid.add(UIComponents.bigCard("Cortes Semanales", "#374151", "/sistemafarmacia/assets/icons/Cortes semanales.png",
-            () -> root.setCenter(new CortesSemanalesView(() -> root.setCenter(createCenter())).getRoot())), 2, 1);
+            () -> actualizarCentro(new CortesSemanalesView(this::restaurarDashboard).getRoot())), 2, 1);
 
-        // Fila 2
         grid.add(UIComponents.bigCard("Cortes de venta", "#374151", "/sistemafarmacia/assets/icons/Cortes semanales.png",
-            () -> root.setCenter(new CortesSesiones(() -> root.setCenter(createCenter())).getRoot())), 0, 2);
+            () -> actualizarCentro(new CortesSesiones(this::restaurarDashboard).getRoot())), 0, 2);
 
         grid.add(UIComponents.bigCard("Filtros", "#374151", "/sistemafarmacia/assets/icons/Filtros.png",
-            () -> root.setCenter(new FiltrosView(() -> root.setCenter(createCenter())).getRoot())), 1, 2);
+            () -> actualizarCentro(new FiltrosView(this::restaurarDashboard).getRoot())), 1, 2);
+
+        grid.add(UIComponents.bigCard("Registrar Gastos", "#374151", "/sistemafarmacia/assets/icons/Nuevo producto.png",
+            () -> actualizarCentro(new GastosView(this::restaurarDashboard).getRoot())), 2, 2);
+
+        grid.add(UIComponents.bigCard("Inversión Adicional", "#374151", "/sistemafarmacia/assets/icons/Nuevo producto.png",
+            () -> actualizarCentro(new InversionAdicionalView(this::restaurarDashboard).getRoot())), 0, 3);
 
         VBox.setVgrow(grid, Priority.ALWAYS);
         container.getChildren().addAll(stats, grid);
         return container;
+    }
+
+    private void actualizarCentro(javafx.scene.Node nodo) {
+        root.setCenter(nodo);
+    }
+
+    private void restaurarDashboard() {
+        ScrollPane sp = new ScrollPane(createCenter());
+        sp.setFitToWidth(true);
+        sp.setStyle("-fx-background: #1f2933; -fx-background-color: transparent; -fx-border-color: transparent; -fx-focus-color: transparent;");
+        root.setCenter(sp);
     }
 
     private String obtenerConteoBase(String sql) {
@@ -101,7 +126,7 @@ public class DashboardView {
              ResultSet rs = ps.executeQuery()) {
             if (rs.next()) return String.valueOf(rs.getInt(1));
         } catch (Exception e) {
-            System.err.println("Error en conteo Dashboard: " + e.getMessage());
+            System.err.println("Error en Dashboard: " + e.getMessage());
         }
         return "0";
     }

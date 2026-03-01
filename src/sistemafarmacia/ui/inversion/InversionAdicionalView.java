@@ -11,12 +11,14 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import sistemafarmacia.utils.ConexionDB;
 
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
 
 /**
  * Vista para el registro de inversiones adicionales en la farmacia.
- * @author cvkca
+ * Corregido según esquema de BD: inversiones_adicionales
  */
 public class InversionAdicionalView {
 
@@ -69,7 +71,6 @@ public class InversionAdicionalView {
 
         // --- Botones ---
         Button btnGuardar = new Button("Confirmar Inversión");
-        // Color azul distintivo para inversiones (#3b82f6)
         btnGuardar.setStyle("-fx-background-color: #3b82f6; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 16; -fx-padding: 12 25; -fx-cursor: hand;");
         btnGuardar.setOnAction(e -> ejecutarGuardado());
 
@@ -88,29 +89,38 @@ public class InversionAdicionalView {
     private void ejecutarGuardado() {
         if (validarCampos()) {
             if (guardarEnBD()) {
-                new Alert(Alert.AlertType.INFORMATION, "Inversión registrada con éxito").showAndWait();
+                mostrarAlerta(Alert.AlertType.INFORMATION, "Éxito", "Inversión registrada correctamente.");
                 if (actionVolver != null) actionVolver.run();
             } else {
-                new Alert(Alert.AlertType.ERROR, "Error al guardar en la base de datos").showAndWait();
+                mostrarAlerta(Alert.AlertType.ERROR, "Error", "No se pudo conectar con la base de datos.");
             }
         } else {
-            new Alert(Alert.AlertType.WARNING, "Revisa que el nombre no esté vacío y el monto sea válido").showAndWait();
+            mostrarAlerta(Alert.AlertType.WARNING, "Validación", "Asegúrate de que el nombre no esté vacío y el monto sea mayor a 0.");
         }
     }
 
     private boolean guardarEnBD() {
-        // Se asume la existencia de una tabla 'inversiones'
-        String sql = "INSERT INTO inversiones (nombre, monto, descripcion, fecha) VALUES (?, ?, ?, CURRENT_DATE)";
+        // SQL corregido: tabla 'inversiones_adicionales', columna de fecha es 'dia'
+        String sql = "INSERT INTO inversiones_adicionales (dia, nombre, monto, descripcion) VALUES (CURRENT_DATE, ?, ?, ?)";
         
+        // El bloque try-with-resources cierra la conexión automáticamente
         try (Connection conn = ConexionDB.getInstance();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             
             ps.setString(1, txtNombre.getText().trim());
-            ps.setDouble(2, Double.parseDouble(txtMonto.getText().trim()));
+            
+            // Usamos BigDecimal para coincidir con el tipo numeric(10,2) de PostgreSQL/MySQL
+            BigDecimal monto = new BigDecimal(txtMonto.getText().trim());
+            ps.setBigDecimal(2, monto);
+            
             ps.setString(3, txtDescripcion.getText().trim());
             
-            ps.executeUpdate();
-            return true;
+            int resultado = ps.executeUpdate();
+            return resultado > 0;
+
+        } catch (SQLException | NumberFormatException e) {
+            System.err.println("Error en BD: " + e.getMessage());
+            return false;
         } catch (Exception e) {
             e.printStackTrace();
             return false;
@@ -119,12 +129,24 @@ public class InversionAdicionalView {
 
     private boolean validarCampos() {
         try {
-            if (txtNombre.getText().trim().isEmpty()) return false;
-            double monto = Double.parseDouble(txtMonto.getText().trim());
-            return monto > 0;
+            String nombre = txtNombre.getText().trim();
+            String montoStr = txtMonto.getText().trim();
+            
+            if (nombre.isEmpty()) return false;
+            
+            BigDecimal monto = new BigDecimal(montoStr);
+            return monto.compareTo(BigDecimal.ZERO) > 0;
         } catch (NumberFormatException e) {
             return false;
         }
+    }
+
+    private void mostrarAlerta(Alert.AlertType tipo, String titulo, String mensaje) {
+        Alert alerta = new Alert(tipo);
+        alerta.setTitle(titulo);
+        alerta.setHeaderText(null);
+        alerta.setContentText(mensaje);
+        alerta.showAndWait();
     }
 
     private void agregarAlGrid(GridPane grid, String etiqueta, javafx.scene.Node control, int row) {

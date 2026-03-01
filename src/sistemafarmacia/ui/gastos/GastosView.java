@@ -11,12 +11,14 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import sistemafarmacia.utils.ConexionDB;
 
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
 
 /**
  * Vista para el registro de gastos de la farmacia.
- * @author cvkca
+ * Sincronizado con la tabla 'gastos' (id_gasto, dia, nombre, monto, descripcion)
  */
 public class GastosView {
 
@@ -69,6 +71,7 @@ public class GastosView {
 
         // --- Botones ---
         Button btnGuardar = new Button("Confirmar Gasto");
+        // Color verde esmeralda para gastos
         btnGuardar.setStyle("-fx-background-color: #10b981; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 16; -fx-padding: 12 25; -fx-cursor: hand;");
         btnGuardar.setOnAction(e -> ejecutarGuardado());
 
@@ -87,29 +90,37 @@ public class GastosView {
     private void ejecutarGuardado() {
         if (validarCampos()) {
             if (guardarEnBD()) {
-                new Alert(Alert.AlertType.INFORMATION, "Gasto registrado correctamente").showAndWait();
+                mostrarAlerta(Alert.AlertType.INFORMATION, "Éxito", "Gasto registrado correctamente.");
                 if (actionVolver != null) actionVolver.run();
             } else {
-                new Alert(Alert.AlertType.ERROR, "Error al conectar con la base de datos").showAndWait();
+                mostrarAlerta(Alert.AlertType.ERROR, "Error", "No se pudo guardar el gasto en la base de datos.");
             }
         } else {
-            new Alert(Alert.AlertType.WARNING, "Por favor revisa que el nombre no esté vacío y el monto sea un número válido").showAndWait();
+            mostrarAlerta(Alert.AlertType.WARNING, "Validación", "Por favor revisa que el nombre no esté vacío y el monto sea un número válido mayor a 0.");
         }
     }
 
     private boolean guardarEnBD() {
-        // SQL asumiendo que tu tabla tiene estos campos
-        String sql = "INSERT INTO gastos (nombre, monto, descripcion, fecha) VALUES (?, ?, ?, CURRENT_DATE)";
+        // SQL ajustado a la imagen: columna 'dia' en lugar de 'fecha'
+        String sql = "INSERT INTO gastos (dia, nombre, monto, descripcion) VALUES (CURRENT_DATE, ?, ?, ?)";
         
         try (Connection conn = ConexionDB.getInstance();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             
             ps.setString(1, txtNombre.getText().trim());
-            ps.setDouble(2, Double.parseDouble(txtMonto.getText().trim()));
+            
+            // Usamos BigDecimal para la precisión de la moneda (numeric 10,2)
+            BigDecimal monto = new BigDecimal(txtMonto.getText().trim());
+            ps.setBigDecimal(2, monto);
+            
             ps.setString(3, txtDescripcion.getText().trim());
             
-            ps.executeUpdate();
-            return true;
+            int filas = ps.executeUpdate();
+            return filas > 0;
+            
+        } catch (SQLException | NumberFormatException e) {
+            System.err.println("Error al registrar gasto: " + e.getMessage());
+            return false;
         } catch (Exception e) {
             e.printStackTrace();
             return false;
@@ -118,12 +129,24 @@ public class GastosView {
 
     private boolean validarCampos() {
         try {
-            if (txtNombre.getText().trim().isEmpty()) return false;
-            Double.parseDouble(txtMonto.getText().trim());
-            return true;
+            String nombre = txtNombre.getText().trim();
+            String montoStr = txtMonto.getText().trim();
+            
+            if (nombre.isEmpty()) return false;
+            
+            BigDecimal monto = new BigDecimal(montoStr);
+            return monto.compareTo(BigDecimal.ZERO) > 0;
         } catch (NumberFormatException e) {
             return false;
         }
+    }
+
+    private void mostrarAlerta(Alert.AlertType tipo, String titulo, String mensaje) {
+        Alert alerta = new Alert(tipo);
+        alerta.setTitle(titulo);
+        alerta.setHeaderText(null);
+        alerta.setContentText(mensaje);
+        alerta.showAndWait();
     }
 
     private void agregarAlGrid(GridPane grid, String etiqueta, javafx.scene.Node control, int row) {
