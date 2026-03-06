@@ -10,10 +10,9 @@ import sistemafarmacia.ui.cortes.CortesSemanalesView;
 import sistemafarmacia.ui.cortes.CortesSesiones;
 import sistemafarmacia.ui.filtros.FiltrosView;
 import sistemafarmacia.ui.nuevoproducto.NuevoProductoView;
+import sistemafarmacia.ui.ticket.GenerarTicketAdicionalView;
 import sistemafarmacia.ui.sesiones.SesionesView;
 import sistemafarmacia.ui.ticket.GenerarTicketView;
-import sistemafarmacia.ui.gastos.GastosView;
-import sistemafarmacia.ui.inversion.InversionAdicionalView;
 import sistemafarmacia.utils.ConexionDB;
 import sistemafarmacia.utils.UIComponents;
 
@@ -60,7 +59,7 @@ public class DashboardView {
         String stockBajo = obtenerConteoBase(sqlBajo);
 
         Region card1 = UIComponents.statCard("Artículos en Inventario", totalItems, "/sistemafarmacia/assets/icons/Productos1.png");
-        Region card2 = UIComponents.statCard("Stock Bajo)", stockBajo, "/sistemafarmacia/assets/icons/Basura2.png");
+        Region card2 = UIComponents.statCard("Stock Bajo", stockBajo, "/sistemafarmacia/assets/icons/Basura2.png");
         
         HBox.setHgrow(card1, Priority.ALWAYS);
         HBox.setHgrow(card2, Priority.ALWAYS);
@@ -97,12 +96,9 @@ public class DashboardView {
 
         grid.add(UIComponents.bigCard("Filtros", "#374151", "/sistemafarmacia/assets/icons/Filtros.png",
             () -> actualizarCentro(new FiltrosView(this::restaurarDashboard).getRoot())), 1, 2);
-
-        grid.add(UIComponents.bigCard("Registrar Gastos", "#374151", "/sistemafarmacia/assets/icons/Nuevo producto.png",
-            () -> actualizarCentro(new GastosView(this::restaurarDashboard).getRoot())), 2, 2);
-
-        grid.add(UIComponents.bigCard("Inversión Adicional", "#374151", "/sistemafarmacia/assets/icons/Nuevo producto.png",
-            () -> actualizarCentro(new InversionAdicionalView(this::restaurarDashboard).getRoot())), 0, 3);
+        
+                grid.add(UIComponents.bigCard("Generar Ticket Adicional", "#374151", "/sistemafarmacia/assets/icons/Generar ticket.png",
+            () -> actualizarCentro(new GenerarTicketAdicionalView(this::restaurarDashboard).getRoot())), 2, 2);
 
         VBox.setVgrow(grid, Priority.ALWAYS);
         container.getChildren().addAll(stats, grid);

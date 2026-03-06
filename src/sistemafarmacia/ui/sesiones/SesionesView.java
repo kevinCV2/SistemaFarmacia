@@ -1,5 +1,6 @@
 package sistemafarmacia.ui.sesiones;
 
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.Side;
@@ -208,35 +209,46 @@ public class SesionesView {
         try (Connection conn = ConexionDB.getInstance()) {
             conn.setAutoCommit(false);
 
-            String sqlCheck = "SELECT id_sesion, total FROM sesiones WHERE paciente = ? AND estado_pago = 'CREDITO' LIMIT 1";
-            int idDeuda = -1;
-            double montoDeuda = 0.0;
-            
+            // 1. BUSCAR DEUDAS ANTERIORES (ESTADO 'CREDITO')
+            String sqlCheck = "SELECT id_sesion, total FROM sesiones WHERE paciente = ? AND estado_pago = 'CREDITO'";
+            double deudaAnterior = 0.0;
+            Set<Integer> idsViejos = new HashSet<>();
+
             try (PreparedStatement psCheck = conn.prepareStatement(sqlCheck)) {
                 psCheck.setString(1, nombrePaciente);
                 ResultSet rs = psCheck.executeQuery();
-                if (rs.next()) {
-                    idDeuda = rs.getInt("id_sesion");
-                    montoDeuda = rs.getDouble("total");
+                while (rs.next()) {
+                    deudaAnterior += rs.getDouble("total");
+                    idsViejos.add(rs.getInt("id_sesion"));
                 }
             }
 
-            double totalFinalAGuardar = montoHoy;
-            if (idDeuda != -1 && !metodoPago.equals("CREDITO")) {
-                totalFinalAGuardar += montoDeuda;
-                String sqlSaldar = "UPDATE sesiones SET estado_pago = 'SALDADO', total = 0 WHERE id_sesion = ?";
-                try (PreparedStatement psSaldar = conn.prepareStatement(sqlSaldar)) {
-                    psSaldar.setInt(1, idDeuda);
-                    psSaldar.executeUpdate();
+            // 2. LOGICA DE SUMA: Si el paciente ya debía y lo nuevo TAMBIÉN es crédito, sumamos.
+            // O si el paciente debía y hoy paga, también unificamos el pago.
+            double totalFinal = montoHoy + deudaAnterior;
+
+            // 3. Si hubo deudas anteriores, las marcamos como SALDADAS con total 0 
+            // para que solo quede la nueva entrada con el total acumulado.
+            if (!idsViejos.isEmpty()) {
+                String sqlUpdateViejos = "UPDATE sesiones SET estado_pago = 'SALDADO', total = 0 WHERE id_sesion = ?";
+                try (PreparedStatement psUpdate = conn.prepareStatement(sqlUpdateViejos)) {
+                    for (Integer idOld : idsViejos) {
+                        psUpdate.setInt(1, idOld);
+                        psUpdate.executeUpdate();
+                    }
                 }
-                motivo += " (INCLUYE PAGO DE DEUDA PENDIENTE)";
+                // Si es un nuevo crédito, avisamos en el motivo que se arrastra deuda
+                if (metodoPago.equals("CREDITO")) {
+                    motivo += " (INCLUYE DEUDA ANTERIOR: $" + deudaAnterior + ")";
+                }
             }
 
+            // 4. INSERTAR LA SESIÓN ACTUAL (CON EL TOTAL SUMADO)
             String sqlInsert = "INSERT INTO sesiones (paciente, consulta, total, medicamentos, fecha, estado_pago) VALUES (?, ?, ?, ?, CURRENT_DATE, ?)";
             try (PreparedStatement psIns = conn.prepareStatement(sqlInsert)) {
                 psIns.setString(1, nombrePaciente);
                 psIns.setString(2, motivo);
-                psIns.setDouble(3, totalFinalAGuardar);
+                psIns.setDouble(3, totalFinal);
                 psIns.setString(4, listaMeds);
                 psIns.setString(5, metodoPago);
                 psIns.executeUpdate();
@@ -250,7 +262,6 @@ public class SesionesView {
         }
     }
 
-    // ─── LÓGICA DE ABONO REPOSTEADA (SUBE AL PRINCIPIO) ───────────────────────────
     private void abrirModalAbono(int idSesion, double deudaActual, String paciente) {
         TextInputDialog dialog = new TextInputDialog("0.00");
         dialog.setTitle("Abonar a Deuda");
@@ -266,7 +277,7 @@ public class SesionesView {
                 try (Connection conn = ConexionDB.getInstance()) {
                     conn.setAutoCommit(false);
 
-                    // 1. Obtener datos de la sesión antigua para clonarlos
+                    // Obtener datos de la deuda original
                     String sqlOld = "SELECT consulta, medicamentos FROM sesiones WHERE id_sesion = ?";
                     String oldConsulta = "";
                     String oldMeds = "";
@@ -279,62 +290,55 @@ public class SesionesView {
                         }
                     }
 
-                    // 2. Desactivar la sesión antigua (Marcar como SALDADO)
-                    String sqlSaldar = "UPDATE sesiones SET estado_pago = 'SALDADO' WHERE id_sesion = ?";
+                    // Marcar deuda actual como saldada
+                    String sqlSaldar = "UPDATE sesiones SET estado_pago = 'SALDADO', total = 0 WHERE id_sesion = ?";
                     try (PreparedStatement psSaldar = conn.prepareStatement(sqlSaldar)) {
                         psSaldar.setInt(1, idSesion);
                         psSaldar.executeUpdate();
                     }
 
-                    // 3. Insertar una NUEVA sesión (Esto le da un nuevo ID y fecha de HOY)
-                    // Esto hace que suba al principio de la lista y el ticket la tome de primera.
-                    String sqlNew = "INSERT INTO sesiones (paciente, consulta, total, medicamentos, fecha, estado_pago) VALUES (?, ?, ?, ?, CURRENT_DATE, ?)";
-                    try (PreparedStatement psNew = conn.prepareStatement(sqlNew)) {
-                        psNew.setString(1, paciente);
-                        
-                        if (abono >= deudaActual) {
-                            // Si paga todo, la nueva sesión aparece como EFECTIVO por el total de la deuda saldada
-                            psNew.setString(2, oldConsulta + " (DEUDA SALDADA)");
-                            psNew.setDouble(3, deudaActual);
-                            psNew.setString(4, oldMeds);
-                            psNew.setString(5, "EFECTIVO");
-                        } else {
-                            // Si es abono parcial, la nueva sesión aparece como el ABONO realizado (para el ticket)
-                            // Y el saldo restante se queda en la descripción o puedes manejar una lógica de crédito
-                            psNew.setString(2, "ABONO A CUENTA: " + oldConsulta + " (RESTAN: $" + (deudaActual - abono) + ")");
-                            psNew.setDouble(3, abono);
-                            psNew.setString(4, oldMeds);
-                            psNew.setString(5, "EFECTIVO"); 
-                            
-                            // Opcional: Si quieres que el saldo restante siga apareciendo como crédito, 
-                            // tendrías que insertar OTRA fila más con el restante. 
-                            // Pero para el TICKET, esta fila de EFECTIVO es la que importa.
-                            String sqlRestante = "INSERT INTO sesiones (paciente, consulta, total, medicamentos, fecha, estado_pago) VALUES (?, ?, ?, ?, CURRENT_DATE, 'CREDITO')";
-                            try (PreparedStatement psRest = conn.prepareStatement(sqlRestante)) {
-                                psRest.setString(1, paciente);
-                                psRest.setString(2, "SALDO RESTANTE DE: " + oldConsulta);
-                                psRest.setDouble(3, deudaActual - abono);
-                                psRest.setString(4, oldMeds);
-                                psRest.executeUpdate();
-                            }
+                    // Caso A: Paga todo o más
+                    if (abono >= deudaActual) {
+                        String sqlInsert = "INSERT INTO sesiones (paciente, consulta, total, medicamentos, fecha, estado_pago) VALUES (?, ?, ?, ?, CURRENT_DATE, 'EFECTIVO')";
+                        try (PreparedStatement ps = conn.prepareStatement(sqlInsert)) {
+                            ps.setString(1, paciente);
+                            ps.setString(2, "PAGO TOTAL DE DEUDA: " + oldConsulta);
+                            ps.setDouble(3, deudaActual);
+                            ps.setString(4, oldMeds);
+                            ps.executeUpdate();
                         }
-                        psNew.executeUpdate();
+                    } 
+                    // Caso B: Abono parcial
+                    else {
+                        // 1. Registrar el ingreso del abono
+                        String sqlAbono = "INSERT INTO sesiones (paciente, consulta, total, medicamentos, fecha, estado_pago) VALUES (?, ?, ?, ?, CURRENT_DATE, 'EFECTIVO')";
+                        try (PreparedStatement ps = conn.prepareStatement(sqlAbono)) {
+                            ps.setString(1, paciente);
+                            ps.setString(2, "ABONO A CUENTA: " + oldConsulta);
+                            ps.setDouble(3, abono);
+                            ps.setString(4, oldMeds);
+                            ps.executeUpdate();
+                        }
+                        // 2. Crear nueva deuda con el restante
+                        String sqlRestante = "INSERT INTO sesiones (paciente, consulta, total, medicamentos, fecha, estado_pago) VALUES (?, ?, ?, ?, CURRENT_DATE, 'CREDITO')";
+                        try (PreparedStatement ps = conn.prepareStatement(sqlRestante)) {
+                            ps.setString(1, paciente);
+                            ps.setString(2, "RESTANTE DE DEUDA: " + oldConsulta);
+                            ps.setDouble(3, deudaActual - abono);
+                            ps.setString(4, oldMeds);
+                            ps.executeUpdate();
+                        }
                     }
 
                     conn.commit();
                     cargarSesionesDesdeBD();
-                    new Alert(Alert.AlertType.INFORMATION, "Abono procesado. La sesión se ha actualizado al día de hoy.").show();
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
-                new Alert(Alert.AlertType.ERROR, "Error al procesar el abono.").show();
-            }
+            } catch (Exception e) { e.printStackTrace(); }
         });
     }
 
     private void cargarSesionesDesdeBD() {
         contenedorSesiones.getChildren().clear();
-        // El ORDER BY id_sesion DESC es clave aquí para que la nueva aparezca arriba
         String sql = "SELECT * FROM sesiones WHERE estado_pago <> 'SALDADO' ORDER BY id_sesion DESC";
         try (Connection conn = ConexionDB.getInstance(); Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sql)) {
             while (rs.next()) {

@@ -211,61 +211,94 @@ public class CortesSemanalesView {
 
     private void imprimirSinPerdida() {
         PrinterJob job = PrinterJob.createPrinterJob();
-        if (job == null) return;
+        if (job == null) {
+            return;
+        }
         Stage stage = (Stage) root.getScene().getWindow();
-        if (!job.showPrintDialog(stage)) return;
+        if (!job.showPrintDialog(stage)) {
+            return;
+        }
 
         PageLayout layout = job.getJobSettings().getPageLayout();
         double printableWidth = layout.getPrintableWidth();
         double printableHeight = layout.getPrintableHeight();
-        
+
+        // Estilo de tabla para impresión (Limpio y profesional)
         TableView<CorteRenglon> tablaFull = createTable();
         tablaFull.getItems().addAll(tablaCortes.getItems());
-        
-        double rowHeight = 32.0;
-        double contentAreaHeight = printableHeight - 180;
+
+        double rowHeight = 30.0; // Ajuste ligero para mejor encuadre
+        double contentAreaHeight = printableHeight - 160;
         int rowsPerPage = (int) (contentAreaHeight / rowHeight);
 
         LocalDate desde = dateDesde.getValue();
         LocalDate hasta = dateHasta.getValue();
-        String fechaRango = String.format("%d-%d %s %d", desde.getDayOfMonth(), hasta.getDayOfMonth(), desde.getMonth().getDisplayName(TextStyle.FULL, new Locale("es")), desde.getYear());
+        String fechaRango = String.format("%d al %d de %s de %d",
+                desde.getDayOfMonth(), hasta.getDayOfMonth(),
+                desde.getMonth().getDisplayName(TextStyle.FULL, new Locale("es")).toUpperCase(),
+                desde.getYear());
 
         int pageNum = 1;
         boolean exito = false;
+
         for (int start = 0; start < tablaFull.getItems().size(); start += rowsPerPage) {
             int end = Math.min(start + rowsPerPage, tablaFull.getItems().size());
+
             TableView<CorteRenglon> pageTable = createTable();
+            // Sobrescribir estilos de la tabla para fondo blanco en impresión
+            pageTable.setStyle("-fx-background-color: white; -fx-control-inner-background: white; -fx-table-cell-border-color: #e5e7eb;");
             pageTable.getItems().addAll(tablaFull.getItems().subList(start, end));
             pageTable.setPrefWidth(printableWidth);
             pageTable.setPrefHeight(contentAreaHeight);
-            
+
             VBox page = new VBox(10);
-            page.setPadding(new Insets(20));
-            page.setStyle("-fx-background-color: white;");
-            
-            HBox header = new HBox(10);
+            page.setPadding(new Insets(15));
+            page.setStyle("-fx-background-color: white;"); // Fondo Blanco
+
+            // --- CABECERA ESTILO CORTES ---
+            HBox header = new HBox(15);
             header.setAlignment(Pos.CENTER_LEFT);
-            ImageView logo = new ImageView("/sistemafarmacia/assets/icons/logo.png");
-            logo.setFitWidth(80); logo.setFitHeight(40);
-            
+            try {
+                ImageView logo = new ImageView("/sistemafarmacia/assets/icons/logo.png");
+                logo.setFitWidth(60);
+                logo.setPreserveRatio(true);
+                header.getChildren().add(logo);
+            } catch (Exception e) {
+            }
+
             VBox headerText = new VBox(2);
-            Label title = new Label("CORTE DE INVENTARIO");
-            title.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-            Label info = new Label("Semana: " + fechaRango + " | Hora: " + LocalTime.now().withNano(0));
-            info.setFont(Font.font("Arial", 12));
+            Label title = new Label("CORTE DE INVENTARIO Y ALMACÉN DIGITAL");
+            title.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+            title.setTextFill(Color.BLACK);
+
+            Label info = new Label("Periodo: " + fechaRango + " | Generado: " + LocalTime.now().withNano(0));
+            info.setFont(Font.font("Arial", 8.5));
+            info.setTextFill(Color.web("#4b5563"));
             headerText.getChildren().addAll(title, info);
-            
-            header.getChildren().addAll(logo, headerText);
-            page.getChildren().addAll(header, new Separator(), pageTable);
-            
-            if (!job.printPage(page)) break;
+            header.getChildren().add(headerText);
+
+            // Pie de página de la hoja (Número de página)
+            HBox pageFooter = new HBox();
+            pageFooter.setAlignment(Pos.CENTER_RIGHT);
+            Label lblPage = new Label("Página " + pageNum);
+            lblPage.setFont(Font.font("Arial", 7));
+            pageFooter.getChildren().add(lblPage);
+
+            page.getChildren().addAll(header, new Separator(), pageTable, pageFooter);
+
+            if (!job.printPage(page)) {
+                break;
+            }
             exito = true;
             pageNum++;
         }
+
         if (exito) {
             job.endJob();
             cortesRealizados++;
-            if (lblContadorCortes != null) lblContadorCortes.setText(String.valueOf(cortesRealizados));
+            if (lblContadorCortes != null) {
+                lblContadorCortes.setText(String.valueOf(cortesRealizados));
+            }
             mostrarAlertaConfirmacion();
         }
     }
