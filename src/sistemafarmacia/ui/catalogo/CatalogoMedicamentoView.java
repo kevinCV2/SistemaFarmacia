@@ -4,16 +4,21 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 import sistemafarmacia.utils.ConexionDB;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.Optional;
 
 public class CatalogoMedicamentoView {
 
@@ -42,7 +47,7 @@ public class CatalogoMedicamentoView {
         title.setFont(Font.font("System", FontWeight.BOLD, 26));
         title.setTextFill(Color.WHITE);
 
-        Label subtitle = new Label("Medicamentos y Estudios");
+        Label subtitle = new Label("Gestión de Precios y Conceptos");
         subtitle.setTextFill(Color.web("#9ca3af"));
 
         headerText.getChildren().addAll(title, subtitle);
@@ -53,13 +58,12 @@ public class CatalogoMedicamentoView {
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         table.setStyle("-fx-base: #111827; -fx-control-inner-background: #111827; -fx-background-color: #111827;");
 
-        // Personalización de filas para el color azul de categoría
         table.setRowFactory(tv -> new TableRow<ObservableList<Object>>() {
             @Override
             protected void updateItem(ObservableList<Object> item, boolean empty) {
                 super.updateItem(item, empty);
-                if (item != null && item.get(3).equals(true)) { // El índice 3 indica si es cabecera
-                    setStyle("-fx-background-color: #1e40af; -fx-font-weight: bold;"); // Azul intenso
+                if (item != null && item.size() > 3 && item.get(3).equals(true)) {
+                    setStyle("-fx-background-color: #1e40af; -fx-font-weight: bold;");
                 } else {
                     setStyle(""); 
                 }
@@ -68,7 +72,42 @@ public class CatalogoMedicamentoView {
 
         table.getColumns().add(createColumn("No.", 0, Pos.CENTER, 50));
         table.getColumns().add(createColumn("Nombre / Concepto", 1, Pos.CENTER_LEFT, -1));
-        table.getColumns().add(createColumn("Precio", 2, Pos.CENTER, 150));
+        table.getColumns().add(createColumn("Precio", 2, Pos.CENTER, 120));
+
+        // ─── COLUMNA DE ACCIONES ──────────────────────────────────
+        TableColumn<ObservableList<Object>, Void> accionesCol = new TableColumn<>("Acciones");
+        accionesCol.setPrefWidth(120);
+        accionesCol.setCellFactory(col -> new TableCell<>() {
+            private final Button btnEdit = new Button("📝");
+            private final Button btnDelete = new Button("🗑");
+            private final HBox box = new HBox(10, btnEdit, btnDelete);
+            {
+                box.setAlignment(Pos.CENTER);
+                btnEdit.setStyle("-fx-background-color:#3b82f6; -fx-text-fill:white; -fx-cursor:hand;");
+                btnDelete.setStyle("-fx-background-color:#dc2626; -fx-text-fill:white; -fx-cursor:hand;");
+
+                btnEdit.setOnAction(e -> {
+                    ObservableList<Object> fila = getTableView().getItems().get(getIndex());
+                    abrirVentanaEdicion(fila);
+                });
+
+                btnDelete.setOnAction(e -> {
+                    ObservableList<Object> fila = getTableView().getItems().get(getIndex());
+                    confirmarEliminacion(fila.get(1).toString()); // Usamos el nombre como identificador
+                });
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || (getTableRow().getItem() != null && (boolean)getTableRow().getItem().get(3))) {
+                    setGraphic(null);
+                } else {
+                    setGraphic(box);
+                }
+            }
+        });
+        table.getColumns().add(accionesCol);
 
         cargarDatosDesdeDB();
 
@@ -79,60 +118,104 @@ public class CatalogoMedicamentoView {
 
     private void cargarDatosDesdeDB() {
         ObservableList<ObservableList<Object>> data = FXCollections.observableArrayList();
-
-        // Mantenemos el orden para que los bloques salgan agrupados
         String sql = "SELECT nombre, precio, categoria FROM public.insumos ORDER BY categoria DESC, nombre ASC";
 
-        try {
-            Connection conn = ConexionDB.getInstance();
-            if (conn != null) {
-                Statement st = conn.createStatement();
-                ResultSet rs = st.executeQuery(sql);
+        try (Connection conn = ConexionDB.getInstance();
+             Statement st = conn.createStatement();
+             ResultSet rs = st.executeQuery(sql)) {
 
-                String categoriaActual = "";
-                int contador = 1;
+            String categoriaActual = "";
+            int contador = 1;
 
-                while (rs.next()) {
-                    String catRaw = rs.getString("categoria");
-                    if (catRaw == null) {
-                        catRaw = "INSUMO";
-                    }
+            while (rs.next()) {
+                String catRaw = rs.getString("categoria") == null ? "INSUMO" : rs.getString("categoria");
+                String catDisplay = catRaw.equalsIgnoreCase("INSUMO") ? "MEDICAMENTOS" : 
+                                   (catRaw.equalsIgnoreCase("ESTUDIO") ? "ANÁLISIS DE LABORATORIO" : catRaw.toUpperCase());
 
-                    // Lógica de visualización de categorías
-                    String catDisplay;
-                    if (catRaw.equalsIgnoreCase("INSUMO")) {
-                        catDisplay = "MEDICAMENTOS";
-                    } else if (catRaw.equalsIgnoreCase("ANÁLISIS DE LABORATORIO") || catRaw.equalsIgnoreCase("ESTUDIO")) {
-                        catDisplay = "ANÁLISIS DE LABORATORIO";
-                    } else {
-                        catDisplay = catRaw.toUpperCase();
-                    }
-
-                    // Si cambia la categoría, insertamos la fila azul de cabecera
-                    if (!catDisplay.equals(categoriaActual)) {
-                        categoriaActual = catDisplay;
-                        ObservableList<Object> filaCabecera = FXCollections.observableArrayList();
-                        filaCabecera.add("");              // No.
-                        filaCabecera.add(categoriaActual); // Nombre de la Categoría
-                        filaCabecera.add("");              // Precio
-                        filaCabecera.add(true);            // ES_CABECERA = true
-                        data.add(filaCabecera);
-                        contador = 1; // Reiniciar contador para la nueva sección
-                    }
-
-                    ObservableList<Object> fila = FXCollections.observableArrayList();
-                    fila.add(contador++);
-                    fila.add(rs.getString("nombre"));
-                    fila.add("$" + String.format("%.2f", rs.getDouble("precio")));
-                    fila.add(false); // ES_CABECERA = false
-
-                    data.add(fila);
+                if (!catDisplay.equals(categoriaActual)) {
+                    categoriaActual = catDisplay;
+                    ObservableList<Object> filaCabecera = FXCollections.observableArrayList("", categoriaActual, "", true);
+                    data.add(filaCabecera);
+                    contador = 1;
                 }
-                table.setItems(data);
+
+                ObservableList<Object> fila = FXCollections.observableArrayList(
+                    contador++, 
+                    rs.getString("nombre"), 
+                    "$" + String.format("%.2f", rs.getDouble("precio")), 
+                    false
+                );
+                data.add(fila);
             }
-        } catch (Exception e) {
-            e.printStackTrace();
+            table.setItems(data);
+        } catch (Exception e) { e.printStackTrace(); }
+    }
+
+    // ─── LÓGICA DE EDICIÓN ──────────────────────────────────────
+    private void abrirVentanaEdicion(ObservableList<Object> row) {
+        Stage modal = new Stage();
+        modal.initModality(Modality.APPLICATION_MODAL);
+        modal.setTitle("Modificar Concepto");
+
+        VBox layout = new VBox(15);
+        layout.setPadding(new Insets(20));
+        layout.setStyle("-fx-background-color: #1f2933;");
+        
+        TextField txtNombre = new TextField(row.get(1).toString());
+        // Limpiamos el "$" del precio para el TextField
+        String precioLimpio = row.get(2).toString().replace("$", "");
+        TextField txtPrecio = new TextField(precioLimpio);
+
+        Button btnGuardar = new Button("Actualizar");
+        btnGuardar.setMaxWidth(Double.MAX_VALUE);
+        btnGuardar.setStyle("-fx-background-color: #10b981; -fx-text-fill: white; -fx-font-weight: bold;");
+        
+        btnGuardar.setOnAction(e -> {
+            actualizarInsumoDB(row.get(1).toString(), txtNombre.getText(), txtPrecio.getText());
+            modal.close();
+            cargarDatosDesdeDB();
+        });
+
+        Label lbl1 = new Label("Nombre / Concepto:"); lbl1.setTextFill(Color.WHITE);
+        Label lbl2 = new Label("Precio ($):"); lbl2.setTextFill(Color.WHITE);
+
+        layout.getChildren().addAll(lbl1, txtNombre, lbl2, txtPrecio, btnGuardar);
+        modal.setScene(new Scene(layout, 300, 250));
+        modal.showAndWait();
+    }
+
+    private void actualizarInsumoDB(String nombreOriginal, String nuevoNombre, String nuevoPrecio) {
+        String sql = "UPDATE insumos SET nombre = ?, precio = ?::numeric WHERE nombre = ?";
+        try (Connection conn = ConexionDB.getInstance(); 
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, nuevoNombre);
+            ps.setDouble(2, Double.parseDouble(nuevoPrecio));
+            ps.setString(3, nombreOriginal);
+            ps.executeUpdate();
+        } catch (Exception e) { e.printStackTrace(); }
+    }
+
+    // ─── LÓGICA DE ELIMINACIÓN ──────────────────────────────────
+    private void confirmarEliminacion(String nombre) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Confirmar eliminación");
+        alert.setHeaderText(null);
+        alert.setContentText("¿Está seguro de eliminar '" + nombre + "'?");
+        
+        Optional<ButtonType> result = alert.showAndWait();
+        if (result.isPresent() && result.get() == ButtonType.OK) {
+            eliminarInsumoDB(nombre);
+            cargarDatosDesdeDB();
         }
+    }
+
+    private void eliminarInsumoDB(String nombre) {
+        String sql = "DELETE FROM insumos WHERE nombre = ?";
+        try (Connection conn = ConexionDB.getInstance(); 
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, nombre);
+            ps.executeUpdate();
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
     private TableColumn<ObservableList<Object>, Object> createColumn(String title, int index, Pos alignment, double width) {
@@ -140,7 +223,7 @@ public class CatalogoMedicamentoView {
         col.setCellValueFactory(data -> new javafx.beans.property.SimpleObjectProperty<>(data.getValue().get(index)));
         if (width > 0) col.setPrefWidth(width);
         
-        col.setCellFactory(column -> new TableCell<ObservableList<Object>, Object>() {
+        col.setCellFactory(column -> new TableCell<>() {
             @Override
             protected void updateItem(Object item, boolean empty) {
                 super.updateItem(item, empty);
@@ -149,7 +232,6 @@ public class CatalogoMedicamentoView {
                 } else {
                     setText(item.toString());
                     setAlignment(alignment);
-                    // Si es cabecera, el texto va en blanco
                     if (getTableRow() != null && getTableRow().getItem() != null && (boolean)getTableRow().getItem().get(3)) {
                         setTextFill(Color.WHITE);
                     } else {

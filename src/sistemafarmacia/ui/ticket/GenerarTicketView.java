@@ -37,6 +37,7 @@ public class GenerarTicketView {
     private Label lblTicketMetodoPago; 
     private VBox contenedorTicketProductos;
     private Label lblTicketTotalNum;
+    private Label lblTicketFechaValor;
 
     private TextField txtIdTicket;
     private TextField txtDireccion;
@@ -276,7 +277,11 @@ public class GenerarTicketView {
         VBox bTicket = crearBloqueInfo("No. TICKET:", "000000", 14, 20);
         lblTicketIdValor = (Label) bTicket.getChildren().get(1);
 
-        VBox bFecha = crearBloqueInfo("FECHA DE EMISIÓN:", LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")), 14, 20);
+        VBox bFecha = crearBloqueInfo("FECHA DE EMISIÓN:",
+                LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")),
+                14, 20);
+
+        lblTicketFechaValor = (Label) bFecha.getChildren().get(1);
 
         VBox bPaciente = crearBloqueInfo("PACIENTE / CLIENTE:", "MOSTRADOR", 14, 20);
         lblTicketPacienteValor = (Label) bPaciente.getChildren().get(1);
@@ -315,36 +320,149 @@ public class GenerarTicketView {
     }
 
     private void obtenerUltimoFolioYDatosCompletos() {
-        if (contenedorProductosFormulario != null) contenedorProductosFormulario.getChildren().clear();
-        if (contenedorSesionesFormulario != null) contenedorSesionesFormulario.getChildren().clear();
+        if (contenedorProductosFormulario != null) {
+            contenedorProductosFormulario.getChildren().clear();
+        }
+        if (contenedorSesionesFormulario != null) {
+            contenedorSesionesFormulario.getChildren().clear();
+        }
 
         try (Connection conn = ConexionDB.getInstance(); Statement stmt = conn.createStatement()) {
+
             ResultSet rsF = stmt.executeQuery("SELECT MAX(id_ticket) FROM public.tickets");
-            if (rsF.next()) contadorTicket = rsF.getInt(1) + 1;
+            if (rsF.next()) {
+                contadorTicket = rsF.getInt(1) + 1;
+            }
+
             String f = String.format("%06d", contadorTicket);
             txtIdTicket.setText(f);
             lblTicketIdValor.setText(f);
 
             ResultSet rsS = stmt.executeQuery("SELECT * FROM public.sesiones ORDER BY id_sesion DESC LIMIT 1");
+
             if (rsS.next()) {
+
                 txtPaciente.setText(rsS.getString("paciente"));
+
                 String met = rsS.getString("estado_pago");
                 lblTicketMetodoPago.setText(met != null ? met.toUpperCase() : "EFECTIVO");
 
-                agregarFilaSesionDinamica(rsS.getString("consulta").toUpperCase(), rsS.getDouble("total"));
+                java.sql.Date fechaActualDB = rsS.getDate("fecha");
+                String fechaActualStr = (fechaActualDB != null)
+                        ? fechaActualDB.toLocalDate().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                        : "";
 
+                if (!fechaActualStr.isEmpty()) {
+                    lblTicketFechaValor.setText(fechaActualStr);
+                }
+
+                String descripcionSesion = rsS.getString("consulta").toUpperCase();
+
+                // =====================================================
+                // SI ES CRÉDITO → MOSTRAR FECHA ORIGINAL + FECHA NUEVA
+                // =====================================================
+                if (met != null && met.equalsIgnoreCase("CREDITO")) {
+
+                    java.sql.Date fechaOriginalDB = null;
+                    double montoOriginal = 0;
+
+                    String sqlCreditoOriginal
+                            = "SELECT fecha, total FROM public.sesiones "
+                            + "WHERE estado_pago = 'CREDITO' "
+                            + "AND paciente = ? "
+                            + "ORDER BY fecha ASC LIMIT 1";
+
+                    try (PreparedStatement psCredito = conn.prepareStatement(sqlCreditoOriginal)) {
+                        psCredito.setString(1, rsS.getString("paciente"));
+                        ResultSet rsCredito = psCredito.executeQuery();
+
+                        if (rsCredito.next()) {
+                            fechaOriginalDB = rsCredito.getDate("fecha");
+                            montoOriginal = rsCredito.getDouble("total");
+                        }
+                    }
+
+                    String fechaOriginalStr = (fechaOriginalDB != null)
+                            ? fechaOriginalDB.toLocalDate().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                            : "";
+
+                    String descripcionFinal
+                            = descripcionSesion
+                            + " (CRÉDITO ORIGINAL: " + fechaOriginalStr
+                            + " | MOVIMIENTO: " + fechaActualStr + ")";
+
+                    agregarFilaSesionDinamica(
+                            descripcionFinal,
+                            montoOriginal,
+                            fechaActualStr
+                    );
+
+                    // ==========================
+                    // SESIONES PENDIENTES
+                    // ==========================
+                    String sqlDeudas = "SELECT consulta, total, fecha "
+                            + "FROM public.sesiones "
+                            + "WHERE estado_pago = 'PENDIENTE' "
+                            + "AND paciente = ?";
+
+                    try (PreparedStatement psDeudas = conn.prepareStatement(sqlDeudas)) {
+                        psDeudas.setString(1, rsS.getString("paciente"));
+                        ResultSet rsDeudas = psDeudas.executeQuery();
+
+                        while (rsDeudas.next()) {
+
+                            java.sql.Date fechaDeudaDB = rsDeudas.getDate("fecha");
+                            String fechaDeuda = (fechaDeudaDB != null)
+                                    ? fechaDeudaDB.toLocalDate().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                                    : "";
+
+                            agregarFilaSesionDinamica(
+                                    rsDeudas.getString("consulta").toUpperCase() + " (SESIÓN PENDIENTE)",
+                                    rsDeudas.getDouble("total"),
+                                    fechaDeuda
+                            );
+                        }
+                    }
+
+                } else {
+
+                    // ==========================
+                    // SI NO ES CRÉDITO
+                    // ==========================
+                    agregarFilaSesionDinamica(
+                            descripcionSesion,
+                            rsS.getDouble("total"),
+                            fechaActualStr
+                    );
+                }
+
+                // ==========================
+                // MEDICAMENTOS
+                // ==========================
                 String medsStr = rsS.getString("medicamentos");
                 if (medsStr != null && !medsStr.isEmpty()) {
+
                     for (String m : medsStr.split(",")) {
+
                         String nLimpio = m.trim();
+
                         if (!nLimpio.isEmpty()) {
+
                             double precioEncontrado = buscarPrecioCualquierTabla(nLimpio);
-                            agregarFilaProductoDinamica(nLimpio.toUpperCase(), 1, precioEncontrado);
+
+                            agregarFilaProductoDinamica(
+                                    nLimpio.toUpperCase(),
+                                    1,
+                                    precioEncontrado
+                            );
                         }
                     }
                 }
             }
-        } catch (Exception e) { e.printStackTrace(); }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private double buscarPrecioCualquierTabla(String nombre) {
@@ -462,21 +580,44 @@ public class GenerarTicketView {
         }
     }
 
-    private void agregarFilaSesionDinamica(String desc, double costo) {
+    private void agregarFilaSesionDinamica(String desc, double costo, String fechaSesion) {
+
         HBox fila = new HBox(10);
-        TextField tTipo = crearTextField("Servicio/Sesión"); tTipo.setText(desc); HBox.setHgrow(tTipo, Priority.ALWAYS);
-        TextField tCosto = crearTextField("Costo"); tCosto.setText(String.valueOf(costo)); tCosto.setPrefWidth(100);
+
+        String descFinal = desc;
+
+        if (fechaSesion != null && !fechaSesion.isEmpty()) {
+            descFinal += " (" + fechaSesion + ")";
+        }
+
+        TextField tTipo = crearTextField("Servicio/Sesión");
+        tTipo.setText(descFinal);
+        HBox.setHgrow(tTipo, Priority.ALWAYS);
+
+        TextField tCosto = crearTextField("Costo");
+        tCosto.setText(String.valueOf(costo));
+        tCosto.setPrefWidth(100);
+
         Button btnDel = new Button("×");
         btnDel.setMinWidth(32);
         btnDel.setPrefWidth(32);
         btnDel.setMaxWidth(32);
         btnDel.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;");
-        btnDel.setOnAction(e -> { contenedorSesionesFormulario.getChildren().remove(fila); actualizarTablaTicket(); });
+        btnDel.setOnAction(e -> {
+            contenedorSesionesFormulario.getChildren().remove(fila);
+            actualizarTablaTicket();
+        });
+
         tTipo.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
         tCosto.textProperty().addListener((o, ol, nv) -> actualizarTablaTicket());
+
         fila.getChildren().addAll(tTipo, tCosto, btnDel);
         contenedorSesionesFormulario.getChildren().add(fila);
         actualizarTablaTicket();
+    }
+    
+    private void agregarFilaSesionDinamica(String desc, double costo) {
+        agregarFilaSesionDinamica(desc, costo, "");
     }
 
     private HBox crearFilaTicketUI(String nombre, int cant, double total) {
@@ -526,4 +667,6 @@ public class GenerarTicketView {
     }
 
     public BorderPane getRoot() { return root; }
+
+ 
 }
