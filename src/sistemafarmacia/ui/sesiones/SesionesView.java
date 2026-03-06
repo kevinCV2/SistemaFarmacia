@@ -103,17 +103,22 @@ public class SesionesView {
 
         cajaMetodos.getChildren().addAll(btnEfectivo, btnTransferencia, btnFactura);
 
-        Label lblListaMeds = new Label("Medicamentos seleccionados: Ninguno");
-        lblListaMeds.setStyle("-fx-text-fill: #38bdf8; -fx-font-weight: bold;");
+        Label lblListaMeds = new Label("Seleccionados: Ninguno");
+        lblListaMeds.setStyle("-fx-text-fill: #38bdf8; -fx-font-weight: bold; -fx-font-size: 12px;");
         lblListaMeds.setWrapText(true);
+        lblListaMeds.setMinHeight(40);
 
-        TextField txtBuscadorMeds = crearInput("Escriba para buscar y añadir...");
+        TextField txtBuscadorMeds = crearInput("Buscar medicamento o insumo...");
         ContextMenu suggestionsMenu = new ContextMenu();
 
         txtBuscadorMeds.textProperty().addListener((obs, old, nv) -> {
-            if (nv.isEmpty()) { suggestionsMenu.hide(); return; }
+            if (nv == null || nv.trim().isEmpty()) { 
+                suggestionsMenu.hide(); 
+                return; 
+            }
             suggestionsMenu.getItems().clear();
-            String sql = "SELECT nombre FROM (SELECT nombre FROM medicamentos UNION ALL SELECT nombre FROM insumos) AS tablas_unidas WHERE nombre ILIKE ? LIMIT 8";
+            String sql = "SELECT nombre FROM (SELECT nombre FROM medicamentos UNION ALL SELECT nombre FROM insumos) AS tablas_unidas WHERE nombre ILIKE ? LIMIT 10";
+            
             try (Connection conn = ConexionDB.getInstance(); PreparedStatement ps = conn.prepareStatement(sql)) {
                 ps.setString(1, "%" + nv + "%");
                 ResultSet rs = ps.executeQuery();
@@ -122,14 +127,12 @@ public class SesionesView {
                     MenuItem item = new MenuItem(n);
                     item.setStyle("-fx-text-fill: black; -fx-font-weight: bold;");
                     item.setOnAction(e -> {
-                        if (medsSeleccionadosSet.contains(n)) {
-                            new Alert(Alert.AlertType.INFORMATION, "Este ítem ya ha sido añadido.").show();
-                        } else {
+                        if (!medsSeleccionadosSet.contains(n)) {
                             medsSeleccionadosSet.add(n);
-                            lblListaMeds.setText("Seleccionados: " + String.join(", ", medsSeleccionadosSet));
+                            lblListaMeds.setText("Seleccionados: " + String.join(" • ", medsSeleccionadosSet));
                         }
                         txtBuscadorMeds.clear();
-                        suggestionsMenu.hide();
+                        txtBuscadorMeds.requestFocus();
                     });
                     suggestionsMenu.getItems().add(item);
                 }
@@ -138,11 +141,11 @@ public class SesionesView {
             } catch (Exception ex) { ex.printStackTrace(); }
         });
 
-        Button btnLimpiar = new Button("Limpiar Medicamentos");
-        btnLimpiar.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; -fx-font-size: 10px;");
+        Button btnLimpiar = new Button("🗑 Limpiar Medicamentos");
+        btnLimpiar.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; -fx-font-size: 11px; -fx-cursor: hand;");
         btnLimpiar.setOnAction(e -> {
             medsSeleccionadosSet.clear();
-            lblListaMeds.setText("Medicamentos seleccionados: Ninguno");
+            lblListaMeds.setText("Seleccionados: Ninguno");
         });
 
         Button btnGuardar = new Button("Confirmar y Guardar Sesión");
@@ -164,29 +167,14 @@ public class SesionesView {
             chkCredito,
             crearLabelGris("MÉTODO DE PAGO"), cajaMetodos,
             new Separator(){{ setStyle("-fx-opacity: 0.1;"); }},
-            crearLabelGris("Añadir Medicamento (Opcional)"), txtBuscadorMeds,
+            crearLabelGris("Añadir Medicamentos"), txtBuscadorMeds,
             lblListaMeds, btnLimpiar,
             new Separator(){{ setStyle("-fx-opacity: 0.2;"); }},
             btnGuardar
         );
 
-        modal.setScene(new Scene(layout, 480, 720));
+        modal.setScene(new Scene(layout, 500, 750));
         modal.showAndWait();
-    }
-
-    private Button crearBotonMetodo(String texto, boolean seleccionado) {
-        Button b = new Button(texto);
-        b.setPrefWidth(140);
-        if (seleccionado) b.setStyle("-fx-background-color: #0891b2; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8;");
-        else b.setStyle("-fx-background-color: #1e293b; -fx-text-fill: #94a3b8; -fx-border-color: #334155; -fx-border-radius: 8; -fx-background-radius: 8;");
-        return b;
-    }
-
-    private void seleccionarMetodo(Button seleccionado, Button b2, Button b3, String metodo) {
-        metodoSeleccionado = metodo;
-        seleccionado.setStyle("-fx-background-color: #0891b2; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8;");
-        b2.setStyle("-fx-background-color: #1e293b; -fx-text-fill: #94a3b8; -fx-border-color: #334155; -fx-border-radius: 8; -fx-background-radius: 8;");
-        b3.setStyle("-fx-background-color: #1e293b; -fx-text-fill: #94a3b8; -fx-border-color: #334155; -fx-border-radius: 8; -fx-background-radius: 8;");
     }
 
     private boolean validarYGuardar(String pac, String con, String tot, String meds, String metodoPago) {
@@ -207,54 +195,16 @@ public class SesionesView {
         } catch (Exception e) { montoHoy = 0.0; }
 
         try (Connection conn = ConexionDB.getInstance()) {
-            conn.setAutoCommit(false);
-
-            // 1. BUSCAR DEUDAS ANTERIORES (ESTADO 'CREDITO')
-            String sqlCheck = "SELECT id_sesion, total FROM sesiones WHERE paciente = ? AND estado_pago = 'CREDITO'";
-            double deudaAnterior = 0.0;
-            Set<Integer> idsViejos = new HashSet<>();
-
-            try (PreparedStatement psCheck = conn.prepareStatement(sqlCheck)) {
-                psCheck.setString(1, nombrePaciente);
-                ResultSet rs = psCheck.executeQuery();
-                while (rs.next()) {
-                    deudaAnterior += rs.getDouble("total");
-                    idsViejos.add(rs.getInt("id_sesion"));
-                }
-            }
-
-            // 2. LOGICA DE SUMA: Si el paciente ya debía y lo nuevo TAMBIÉN es crédito, sumamos.
-            // O si el paciente debía y hoy paga, también unificamos el pago.
-            double totalFinal = montoHoy + deudaAnterior;
-
-            // 3. Si hubo deudas anteriores, las marcamos como SALDADAS con total 0 
-            // para que solo quede la nueva entrada con el total acumulado.
-            if (!idsViejos.isEmpty()) {
-                String sqlUpdateViejos = "UPDATE sesiones SET estado_pago = 'SALDADO', total = 0 WHERE id_sesion = ?";
-                try (PreparedStatement psUpdate = conn.prepareStatement(sqlUpdateViejos)) {
-                    for (Integer idOld : idsViejos) {
-                        psUpdate.setInt(1, idOld);
-                        psUpdate.executeUpdate();
-                    }
-                }
-                // Si es un nuevo crédito, avisamos en el motivo que se arrastra deuda
-                if (metodoPago.equals("CREDITO")) {
-                    motivo += " (INCLUYE DEUDA ANTERIOR: $" + deudaAnterior + ")";
-                }
-            }
-
-            // 4. INSERTAR LA SESIÓN ACTUAL (CON EL TOTAL SUMADO)
+            // INSERTAMOS COMO NUEVO REGISTRO (RESPETANDO EL HISTORIAL)
             String sqlInsert = "INSERT INTO sesiones (paciente, consulta, total, medicamentos, fecha, estado_pago) VALUES (?, ?, ?, ?, CURRENT_DATE, ?)";
             try (PreparedStatement psIns = conn.prepareStatement(sqlInsert)) {
                 psIns.setString(1, nombrePaciente);
                 psIns.setString(2, motivo);
-                psIns.setDouble(3, totalFinal);
+                psIns.setDouble(3, montoHoy);
                 psIns.setString(4, listaMeds);
                 psIns.setString(5, metodoPago);
                 psIns.executeUpdate();
             }
-
-            conn.commit();
             return true;
         } catch (Exception e) {
             e.printStackTrace();
@@ -265,7 +215,7 @@ public class SesionesView {
     private void abrirModalAbono(int idSesion, double deudaActual, String paciente) {
         TextInputDialog dialog = new TextInputDialog("0.00");
         dialog.setTitle("Abonar a Deuda");
-        dialog.setHeaderText("Paciente: " + paciente + "\nDeuda Pendiente: $" + deudaActual);
+        dialog.setHeaderText("Paciente: " + paciente + "\nDeuda de esta sesión: $" + deudaActual);
         dialog.setContentText("Monto a abonar:");
 
         Optional<String> result = dialog.showAndWait();
@@ -277,57 +227,30 @@ public class SesionesView {
                 try (Connection conn = ConexionDB.getInstance()) {
                     conn.setAutoCommit(false);
 
-                    // Obtener datos de la deuda original
-                    String sqlOld = "SELECT consulta, medicamentos FROM sesiones WHERE id_sesion = ?";
-                    String oldConsulta = "";
-                    String oldMeds = "";
-                    try (PreparedStatement psOld = conn.prepareStatement(sqlOld)) {
-                        psOld.setInt(1, idSesion);
-                        ResultSet rs = psOld.executeQuery();
-                        if (rs.next()) {
-                            oldConsulta = rs.getString("consulta");
-                            oldMeds = rs.getString("medicamentos");
-                        }
-                    }
-
-                    // Marcar deuda actual como saldada
-                    String sqlSaldar = "UPDATE sesiones SET estado_pago = 'SALDADO', total = 0 WHERE id_sesion = ?";
-                    try (PreparedStatement psSaldar = conn.prepareStatement(sqlSaldar)) {
-                        psSaldar.setInt(1, idSesion);
-                        psSaldar.executeUpdate();
-                    }
-
-                    // Caso A: Paga todo o más
                     if (abono >= deudaActual) {
-                        String sqlInsert = "INSERT INTO sesiones (paciente, consulta, total, medicamentos, fecha, estado_pago) VALUES (?, ?, ?, ?, CURRENT_DATE, 'EFECTIVO')";
-                        try (PreparedStatement ps = conn.prepareStatement(sqlInsert)) {
-                            ps.setString(1, paciente);
-                            ps.setString(2, "PAGO TOTAL DE DEUDA: " + oldConsulta);
-                            ps.setDouble(3, deudaActual);
-                            ps.setString(4, oldMeds);
+                        // SALDAR COMPLETAMENTE
+                        String sqlSaldar = "UPDATE sesiones SET estado_pago = 'SALDADO' WHERE id_sesion = ?";
+                        try (PreparedStatement ps = conn.prepareStatement(sqlSaldar)) {
+                            ps.setInt(1, idSesion);
                             ps.executeUpdate();
                         }
-                    } 
-                    // Caso B: Abono parcial
-                    else {
-                        // 1. Registrar el ingreso del abono
-                        String sqlAbono = "INSERT INTO sesiones (paciente, consulta, total, medicamentos, fecha, estado_pago) VALUES (?, ?, ?, ?, CURRENT_DATE, 'EFECTIVO')";
-                        try (PreparedStatement ps = conn.prepareStatement(sqlAbono)) {
-                            ps.setString(1, paciente);
-                            ps.setString(2, "ABONO A CUENTA: " + oldConsulta);
-                            ps.setDouble(3, abono);
-                            ps.setString(4, oldMeds);
+                    } else {
+                        // ABONO PARCIAL (RESTA DE LA DEUDA DE ESA FECHA)
+                        String sqlUpdate = "UPDATE sesiones SET total = total - ? WHERE id_sesion = ?";
+                        try (PreparedStatement ps = conn.prepareStatement(sqlUpdate)) {
+                            ps.setDouble(1, abono);
+                            ps.setInt(2, idSesion);
                             ps.executeUpdate();
                         }
-                        // 2. Crear nueva deuda con el restante
-                        String sqlRestante = "INSERT INTO sesiones (paciente, consulta, total, medicamentos, fecha, estado_pago) VALUES (?, ?, ?, ?, CURRENT_DATE, 'CREDITO')";
-                        try (PreparedStatement ps = conn.prepareStatement(sqlRestante)) {
-                            ps.setString(1, paciente);
-                            ps.setString(2, "RESTANTE DE DEUDA: " + oldConsulta);
-                            ps.setDouble(3, deudaActual - abono);
-                            ps.setString(4, oldMeds);
-                            ps.executeUpdate();
-                        }
+                    }
+
+                    // REGISTRAR EL INGRESO DE DINERO HOY
+                    String sqlIngreso = "INSERT INTO sesiones (paciente, consulta, total, medicamentos, fecha, estado_pago) VALUES (?, ?, ?, 'S/M', CURRENT_DATE, 'EFECTIVO')";
+                    try (PreparedStatement ps = conn.prepareStatement(sqlIngreso)) {
+                        ps.setString(1, paciente);
+                        ps.setString(2, "ABONO A CUENTA (REF SESION: " + idSesion + ")");
+                        ps.setDouble(3, abono);
+                        ps.executeUpdate();
                     }
 
                     conn.commit();
@@ -390,12 +313,9 @@ public class SesionesView {
             badgeEstado.setStyle("-fx-background-color: #064e3b; -fx-text-fill: #34d399; -fx-padding: 3 8; -fx-background-radius: 5; -fx-font-size: 9; -fx-font-weight: bold;");
         }
 
-        Label lblMetodoDesc = new Label(estado); 
-        lblMetodoDesc.setStyle("-fx-text-fill: #cbd5e1; -fx-font-size: 11px; -fx-font-weight: bold;");
-
-        VBox colTot = new VBox(2, crearLabelGris("TOTAL / PAGO"), 
+        VBox colTot = new VBox(2, crearLabelGris("TOTAL / ESTADO"), 
                                new HBox(8, new Label("$"+total){{ setTextFill(Color.web("#38bdf8")); setFont(Font.font("System", FontWeight.BOLD, 16)); }}, badgeEstado),
-                               lblMetodoDesc);
+                               new Label(estado){{ setStyle("-fx-text-fill: #64748b; -fx-font-size: 10px;"); }});
         colTot.setAlignment(Pos.CENTER_RIGHT);
 
         HBox.setHgrow(colCon, Priority.ALWAYS);
@@ -420,6 +340,21 @@ public class SesionesView {
 
         card.getChildren().addAll(header, new Separator(){{ setStyle("-fx-opacity: 0.1;"); }}, footer);
         return card;
+    }
+
+    private Button crearBotonMetodo(String texto, boolean seleccionado) {
+        Button b = new Button(texto);
+        b.setPrefWidth(140);
+        if (seleccionado) b.setStyle("-fx-background-color: #0891b2; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8;");
+        else b.setStyle("-fx-background-color: #1e293b; -fx-text-fill: #94a3b8; -fx-border-color: #334155; -fx-border-radius: 8; -fx-background-radius: 8;");
+        return b;
+    }
+
+    private void seleccionarMetodo(Button seleccionado, Button b2, Button b3, String metodo) {
+        metodoSeleccionado = metodo;
+        seleccionado.setStyle("-fx-background-color: #0891b2; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8;");
+        b2.setStyle("-fx-background-color: #1e293b; -fx-text-fill: #94a3b8; -fx-border-color: #334155; -fx-border-radius: 8; -fx-background-radius: 8;");
+        b3.setStyle("-fx-background-color: #1e293b; -fx-text-fill: #94a3b8; -fx-border-color: #334155; -fx-border-radius: 8; -fx-background-radius: 8;");
     }
 
     private Label crearLabelGris(String t) {

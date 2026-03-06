@@ -22,6 +22,7 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Optional;
 
 public class GenerarTicketView {
 
@@ -42,11 +43,11 @@ public class GenerarTicketView {
     private TextField txtDireccion;
     private TextField txtNumero;
     private TextField txtPaciente;
+    private ComboBox<String> comboMetodoPago; // Nuevo selector
     private VBox contenedorSesionesFormulario;
 
     private static int contadorTicket = 1;
 
-    // Constantes con la información fija
     private final String DIRECCION_FIJA = "VALLE EMBRUJADO NO.131, ESQ. SANTA ANA\nFRACCIONAMIENTO VALLE DE SAN JAVIER C.P.42086\nPACHUCA DE SOTO, HIDALGO.";
     private final String TELEFONO_FIJO = "771 377 81 07 / 771 102 7324";
 
@@ -61,6 +62,7 @@ public class GenerarTicketView {
         Button btnVolver = new Button("⬅ Regresar");
         btnVolver.setStyle("-fx-background-color: transparent; -fx-text-fill: white; -fx-border-color: #374151; -fx-border-radius: 5; -fx-cursor: hand;");
         btnVolver.setOnAction(e -> { if (this.actionVolver != null) this.actionVolver.run(); });
+        
         Label title = new Label("Generador de Tickets");
         title.setFont(Font.font("System", FontWeight.BOLD, 22));
         title.setStyle("-fx-text-fill: white;");
@@ -82,6 +84,50 @@ public class GenerarTicketView {
         obtenerUltimoFolioYDatosCompletos();
     }
 
+    private void obtenerUltimoFolioYDatosCompletos() {
+        if (contenedorSesionesFormulario != null) {
+            contenedorSesionesFormulario.getChildren().clear();
+        }
+
+        try (Connection conn = ConexionDB.getInstance(); Statement stmt = conn.createStatement()) {
+            ResultSet rsF = stmt.executeQuery("SELECT MAX(id_ticket) FROM public.tickets");
+            if (rsF.next()) contadorTicket = rsF.getInt(1) + 1;
+            
+            String f = String.format("%06d", contadorTicket);
+            txtIdTicket.setText(f);
+            lblTicketIdValor.setText(f);
+
+            ResultSet rsS = stmt.executeQuery("SELECT paciente, estado_pago FROM public.sesiones ORDER BY id_sesion DESC LIMIT 1");
+
+            if (rsS.next()) {
+                String nombrePaciente = rsS.getString("paciente");
+                String metodoCargado = rsS.getString("estado_pago").toUpperCase();
+                
+                txtPaciente.setText(nombrePaciente);
+                comboMetodoPago.setValue(metodoCargado); // Sincroniza el combo con la DB
+                lblTicketMetodoPago.setText(metodoCargado);
+
+                String sqlHistorial = "SELECT consulta, total, fecha, estado_pago FROM public.sesiones " +
+                                      "WHERE paciente = ? AND estado_pago <> 'SALDADO' " +
+                                      "ORDER BY fecha ASC";
+                
+                try (PreparedStatement psH = conn.prepareStatement(sqlHistorial)) {
+                    psH.setString(1, nombrePaciente);
+                    ResultSet rsH = psH.executeQuery();
+                    while (rsH.next()) {
+                        String descBase = rsH.getString("consulta").toUpperCase();
+                        double monto = rsH.getDouble("total");
+                        java.sql.Date fechaDB = rsH.getDate("fecha");
+                        String fechaStr = (fechaDB != null) ? fechaDB.toLocalDate().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) : "S/F";
+                        
+                        String prefijo = rsH.getString("estado_pago").equalsIgnoreCase("CREDITO") ? "ADEUDO: " : "";
+                        agregarFilaSesionDinamica(prefijo + descBase + " (" + fechaStr + ")", monto);
+                    }
+                }
+            }
+        } catch (Exception e) { e.printStackTrace(); }
+    }
+
     private VBox crearPanelFormulario() {
         VBox panelPrincipal = new VBox(20);
         VBox contenidoScroll = new VBox(20);
@@ -90,40 +136,48 @@ public class GenerarTicketView {
         VBox cardDatos = new VBox(15);
         cardDatos.setStyle("-fx-background-color: #111827; -fx-padding: 20; -fx-background-radius: 10;");
         
-        txtIdTicket = crearTextField("Folio");
-        txtIdTicket.setEditable(false);
-
-        txtDireccion = crearTextField("");
-        txtDireccion.setText(DIRECCION_FIJA);
+        txtIdTicket = crearTextField("Folio"); txtIdTicket.setEditable(false);
+        txtDireccion = crearTextField(""); txtDireccion.setText(DIRECCION_FIJA);
         txtDireccion.textProperty().addListener((obs, old, nv) -> lblTicketDireccion.setText(nv));
         
-        txtNumero = crearTextField("");
-        txtNumero.setText(TELEFONO_FIJO);
+        txtNumero = crearTextField(""); txtNumero.setText(TELEFONO_FIJO);
         txtNumero.textProperty().addListener((obs, old, nv) -> lblTicketNumero.setText(nv.isEmpty() ? "" : "TEL. " + nv));
-
+        
         txtPaciente = crearTextField("Nombre del Paciente");
         txtPaciente.textProperty().addListener((obs, old, nv) -> lblTicketPacienteValor.setText(nv.isEmpty() ? "MOSTRADOR" : nv.toUpperCase()));
+
+        // --- SELECTOR DE MÉTODO DE PAGO ---
+        comboMetodoPago = new ComboBox<>();
+        comboMetodoPago.getItems().addAll("EFECTIVO", "TRANSFERENCIA", "FACTURA", "CREDITO");
+        comboMetodoPago.setValue("EFECTIVO");
+        comboMetodoPago.setMaxWidth(Double.MAX_VALUE);
+        comboMetodoPago.setStyle("-fx-background-color: #1f2933; -fx-text-fill: white; -fx-border-color: #374151; -fx-padding: 5;");
+        
+        // Listener para actualizar el ticket visualmente
+        comboMetodoPago.valueProperty().addListener((obs, old, nv) -> {
+            if(nv != null) lblTicketMetodoPago.setText(nv);
+        });
 
         cardDatos.getChildren().addAll(
             new Label("Datos de la Venta") {{ setStyle("-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 16px;"); }},
             new Label("Folio") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, txtIdTicket,
+            new Label("Paciente") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, txtPaciente,
+            new Label("Forma de Pago") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, comboMetodoPago,
             new Label("Dirección") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, txtDireccion,
-            new Label("Teléfono") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, txtNumero,
-            new Label("Paciente") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, txtPaciente
+            new Label("Teléfono") {{ setStyle("-fx-text-fill: #9ca3af;"); }}, txtNumero
         );
 
         VBox cardSesiones = new VBox(15);
         cardSesiones.setStyle("-fx-background-color: #111827; -fx-padding: 20; -fx-background-radius: 10;");
         contenedorSesionesFormulario = new VBox(10);
         
-        Button btnAddSesion = new Button("+ Agregar Servicio");
-        btnAddSesion.setStyle("-fx-background-color: #374151; -fx-text-fill: #9ca3af;");
-        btnAddSesion.setDisable(true); 
+        Button btnAddAbono = new Button("💰 + Añadir Abono");
+        btnAddAbono.setStyle("-fx-background-color: #059669; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;");
+        btnAddAbono.setOnAction(e -> abrirModalAbonoManual());
 
-        cardSesiones.getChildren().addAll(
-            new HBox(new Label("Servicios y Sesiones (Solo lectura)") {{ setStyle("-fx-text-fill: white; -fx-font-weight: bold;"); }}, new Region() {{ HBox.setHgrow(this, Priority.ALWAYS); }}, btnAddSesion),
-            contenedorSesionesFormulario
-        );
+        HBox headerSesiones = new HBox(new Label("Servicios y Deudas") {{ setStyle("-fx-text-fill: white; -fx-font-weight: bold;"); }}, new Region(){{HBox.setHgrow(this, Priority.ALWAYS);}}, btnAddAbono);
+
+        cardSesiones.getChildren().addAll(headerSesiones, contenedorSesionesFormulario);
 
         contenidoScroll.getChildren().addAll(cardDatos, cardSesiones);
         ScrollPane scroll = new ScrollPane(contenidoScroll);
@@ -140,33 +194,71 @@ public class GenerarTicketView {
         return panelPrincipal;
     }
 
+    private void agregarFilaSesionDinamica(String desc, double costo) {
+        HBox fila = new HBox(10);
+        fila.setAlignment(Pos.CENTER_LEFT);
+
+        TextField tTipo = crearTextField("Descripción");
+        tTipo.setText(desc);
+        tTipo.setEditable(false); 
+        HBox.setHgrow(tTipo, Priority.ALWAYS);
+
+        TextField tCosto = crearTextField("Costo");
+        tCosto.setText(String.format("%.2f", costo));
+        tCosto.setEditable(false); 
+        tCosto.setPrefWidth(100);
+
+        Button btnQuitar = new Button("✕");
+        btnQuitar.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; -fx-padding: 5 10; -fx-cursor: hand;");
+        btnQuitar.setOnAction(e -> {
+            contenedorSesionesFormulario.getChildren().remove(fila);
+            actualizarTablaTicket();
+        });
+
+        fila.getChildren().addAll(tTipo, tCosto, btnQuitar);
+        contenedorSesionesFormulario.getChildren().add(fila);
+        actualizarTablaTicket();
+    }
+
+    private void actualizarTablaTicket() {
+        if (contenedorTicketProductos == null || lblTicketTotalNum == null) return;
+        contenedorTicketProductos.getChildren().clear();
+        double granTotal = 0.0;
+
+        for (Node n : contenedorSesionesFormulario.getChildren()) {
+            if (!(n instanceof HBox)) continue;
+            HBox f = (HBox) n;
+            String desc = ((TextField) f.getChildren().get(0)).getText().trim();
+            double costo = 0.0;
+            try { costo = Double.parseDouble(((TextField) f.getChildren().get(1)).getText()); } catch (Exception e) {}
+            granTotal += costo;
+            contenedorTicketProductos.getChildren().add(crearFilaTicketUI(desc, 1, costo));
+        }
+        lblTicketTotalNum.setText(String.format("$%.2f", Math.max(0, granTotal)));
+    }
+
     private void construirDisenoTicket() {
         ticketPaper.getChildren().clear();
         ticketPaper.setAlignment(Pos.TOP_CENTER);
-        
-        // --- LÍMITE FÍSICO POS-58 ---
         ticketPaper.setMinWidth(360);
         ticketPaper.setMaxWidth(360);
         
         ImageView logo = new ImageView();
         try { 
             logo.setImage(new Image(getClass().getResourceAsStream("/sistemafarmacia/assets/icons/ticket.jpeg"))); 
-            logo.setFitWidth(200); 
-            logo.setPreserveRatio(true); 
+            logo.setFitWidth(180); logo.setPreserveRatio(true); 
         } catch(Exception e){}
 
         Label lblNombre = new Label("UNIDAD DE HEMODIÁLISIS\nINTEGRAL SAN RAFAEL");
         lblNombre.setFont(Font.font("Courier New", FontWeight.BOLD, 17));
         lblNombre.setTextAlignment(TextAlignment.CENTER);
         lblNombre.setWrapText(true);
-        lblNombre.setMaxWidth(340);
         lblNombre.setStyle("-fx-text-fill: black;");
 
         lblTicketDireccion = new Label(DIRECCION_FIJA); 
-        lblTicketDireccion.setFont(Font.font("Courier New", FontWeight.BOLD, 12)); 
+        lblTicketDireccion.setFont(Font.font("Courier New", FontWeight.BOLD, 11)); 
         lblTicketDireccion.setTextAlignment(TextAlignment.CENTER);
         lblTicketDireccion.setWrapText(true);
-        lblTicketDireccion.setMaxWidth(340);
         lblTicketDireccion.setStyle("-fx-text-fill: black;");
 
         lblTicketNumero = new Label("TEL. " + TELEFONO_FIJO);
@@ -175,18 +267,13 @@ public class GenerarTicketView {
 
         VBox bTicket = crearBloqueInfo("No. TICKET:", "000000", 14, 20);
         lblTicketIdValor = (Label) bTicket.getChildren().get(1);
-
         VBox bFecha = crearBloqueInfo("FECHA DE EMISIÓN:", LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")), 14, 20);
         lblTicketFechaValor = (Label) bFecha.getChildren().get(1);
-
         VBox bPaciente = crearBloqueInfo("PACIENTE / CLIENTE:", "MOSTRADOR", 14, 20);
         lblTicketPacienteValor = (Label) bPaciente.getChildren().get(1);
 
-        VBox bMetodoPago = new VBox(2);
-        bMetodoPago.setAlignment(Pos.CENTER);
-        Label lblMetodoTitulo = new Label("MÉTODO DE PAGO:");
-        lblMetodoTitulo.setFont(Font.font("Courier New", FontWeight.BOLD, 14));
-        
+        VBox bMetodoPago = new VBox(2); bMetodoPago.setAlignment(Pos.CENTER);
+        Label lblMetodoTitulo = new Label("MÉTODO DE PAGO:"); lblMetodoTitulo.setFont(Font.font("Courier New", FontWeight.BOLD, 14));
         lblTicketMetodoPago = new Label("EFECTIVO");
         lblTicketMetodoPago.setFont(Font.font("Courier New", FontWeight.BOLD, 20));
         lblTicketMetodoPago.setStyle("-fx-text-fill: black; -fx-border-color: black; -fx-border-width: 2; -fx-padding: 3 15;"); 
@@ -202,101 +289,35 @@ public class GenerarTicketView {
             bTicket, new Label(""), bFecha, new Label(""), bPaciente, new Label(""), bMetodoPago, 
             separador(),
             new HBox() {{ getChildren().addAll(
-                new Label("DESC."){{setPrefWidth(180); setStyle("-fx-text-fill: black;"); setFont(Font.font("Courier New", FontWeight.BOLD, 12));}}, 
-                new Label("CT"){{setPrefWidth(40); setStyle("-fx-text-fill: black;"); setFont(Font.font("Courier New", FontWeight.BOLD, 12));}}, 
+                new Label("DESCRIPCIÓN"){{setPrefWidth(220); setStyle("-fx-text-fill: black;"); setFont(Font.font("Courier New", FontWeight.BOLD, 12));}}, 
                 new Label("COSTO"){{setPrefWidth(100); setStyle("-fx-text-fill: black;"); setFont(Font.font("Courier New", FontWeight.BOLD, 12));}}); 
             }},
             separador(), 
             contenedorTicketProductos, 
             separador(),
-            new HBox(new Label("TOTAL:"){{setFont(Font.font("Courier New", FontWeight.BOLD, 20)); setStyle("-fx-text-fill: black;");}}, new Region(){{HBox.setHgrow(this, Priority.ALWAYS);}}, lblTicketTotalNum),
+            new HBox(new Label("TOTAL A PAGAR:"){{setFont(Font.font("Courier New", FontWeight.BOLD, 18)); setStyle("-fx-text-fill: black;");}}, new Region(){{HBox.setHgrow(this, Priority.ALWAYS);}}, lblTicketTotalNum),
             new Label("\n¡Gracias por su confianza!"){{setFont(Font.font("Courier New", FontWeight.BOLD, 13)); setStyle("-fx-text-fill: black;");}}
         );
     }
 
-    private void actualizarTablaTicket() {
-        if (contenedorTicketProductos == null || lblTicketTotalNum == null) return;
-        contenedorTicketProductos.getChildren().clear();
-        double granTotal = 0.0;
-
-        for (Node n : contenedorSesionesFormulario.getChildren()) {
-            if (!(n instanceof HBox)) continue;
-            HBox f = (HBox) n;
-            String tipo = ((TextField) f.getChildren().get(0)).getText().trim();
-            if (tipo.isEmpty()) continue;
-
-            double costo = 0.0;
-            try { costo = Double.parseDouble(((TextField) f.getChildren().get(1)).getText()); } catch (Exception e) {}
-            granTotal += costo;
-            contenedorTicketProductos.getChildren().add(crearFilaTicketUI(tipo, 1, costo));
-        }
-
-        lblTicketTotalNum.setText(String.format("$%.2f", granTotal));
-    }
-
-    private void obtenerUltimoFolioYDatosCompletos() {
-        if (contenedorSesionesFormulario != null) {
-            contenedorSesionesFormulario.getChildren().clear();
-        }
-
-        try (Connection conn = ConexionDB.getInstance(); Statement stmt = conn.createStatement()) {
-            ResultSet rsF = stmt.executeQuery("SELECT MAX(id_ticket) FROM public.tickets");
-            if (rsF.next()) {
-                contadorTicket = rsF.getInt(1) + 1;
-            }
-
-            String f = String.format("%06d", contadorTicket);
-            txtIdTicket.setText(f);
-            lblTicketIdValor.setText(f);
-
-            ResultSet rsS = stmt.executeQuery("SELECT * FROM public.sesiones ORDER BY id_sesion DESC LIMIT 1");
-
-            if (rsS.next()) {
-                txtPaciente.setText(rsS.getString("paciente"));
-                String met = rsS.getString("estado_pago");
-                lblTicketMetodoPago.setText(met != null ? met.toUpperCase() : "EFECTIVO");
-
-                java.sql.Date fechaActualDB = rsS.getDate("fecha");
-                String fechaActualStr = (fechaActualDB != null)
-                        ? fechaActualDB.toLocalDate().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
-                        : "";
-
-                if (!fechaActualStr.isEmpty()) {
-                    lblTicketFechaValor.setText(fechaActualStr);
+    private void abrirModalAbonoManual() {
+        TextInputDialog dialog = new TextInputDialog("0.00");
+        dialog.setTitle("Registrar Abono");
+        dialog.setHeaderText("Abono al Saldo Actual");
+        dialog.setContentText("Monto a abonar ($):");
+        Optional<String> result = dialog.showAndWait();
+        result.ifPresent(montoStr -> {
+            try {
+                double monto = Double.parseDouble(montoStr);
+                if (monto > 0) {
+                    agregarFilaSesionDinamica("ABONO RECIBIDO (" + LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) + ")", -monto);
                 }
-
-                String descripcionSesion = rsS.getString("consulta").toUpperCase();
-
-                if (met != null && met.equalsIgnoreCase("CREDITO")) {
-                    java.sql.Date fechaOriginalDB = null;
-                    double montoOriginal = 0;
-                    String sqlCreditoOriginal = "SELECT fecha, total FROM public.sesiones WHERE estado_pago = 'CREDITO' AND paciente = ? ORDER BY fecha ASC LIMIT 1";
-
-                    try (PreparedStatement psCredito = conn.prepareStatement(sqlCreditoOriginal)) {
-                        psCredito.setString(1, rsS.getString("paciente"));
-                        ResultSet rsCredito = psCredito.executeQuery();
-                        if (rsCredito.next()) {
-                            fechaOriginalDB = rsCredito.getDate("fecha");
-                            montoOriginal = rsCredito.getDouble("total");
-                        }
-                    }
-
-                    String fechaOriginalStr = (fechaOriginalDB != null) ? fechaOriginalDB.toLocalDate().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) : "";
-                    String descripcionFinal = descripcionSesion + " (CRÉDITO ORIGINAL: " + fechaOriginalStr + " | MOVIMIENTO: " + fechaActualStr + ")";
-                    agregarFilaSesionDinamica(descripcionFinal, montoOriginal, fechaActualStr);
-
-                } else {
-                    agregarFilaSesionDinamica(descripcionSesion, rsS.getDouble("total"), fechaActualStr);
-                }
-            }
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+            } catch (Exception e) {}
+        });
     }
 
     private boolean guardarTicketEnBD() {
-        String insertTicket = "INSERT INTO public.tickets (folio, fecha, paciente, direccion, telefono, total) VALUES (?, NOW(), ?, ?, ?, ?) RETURNING id_ticket";
+        String insertTicket = "INSERT INTO public.tickets (folio, fecha, paciente, direccion, telefono, total, metodo_pago) VALUES (?, NOW(), ?, ?, ?, ?, ?) RETURNING id_ticket";
         String insertDetalle = "INSERT INTO public.ticket_detalles (id_ticket, producto, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?)";
 
         try (Connection conn = ConexionDB.getInstance()) {
@@ -308,6 +329,7 @@ public class GenerarTicketView {
                 psTicket.setString(4, txtNumero.getText());
                 double totalVal = Double.parseDouble(lblTicketTotalNum.getText().replace("$", "").trim());
                 psTicket.setDouble(5, totalVal);
+                psTicket.setString(6, comboMetodoPago.getValue()); // Guardar método seleccionado
 
                 ResultSet rs = psTicket.executeQuery();
                 if (rs.next()) {
@@ -328,15 +350,14 @@ public class GenerarTicketView {
                         psDetalle.executeBatch();
                     }
                 }
-                conn.commit();
-                return true;
+                conn.commit(); return true;
             } catch (Exception e) { conn.rollback(); e.printStackTrace(); return false; }
         } catch (Exception e) { e.printStackTrace(); return false; }
     }
 
     private void imprimirTicket() {
         if (contenedorSesionesFormulario.getChildren().isEmpty()) {
-            new Alert(Alert.AlertType.WARNING, "No hay servicios para generar un ticket.").show();
+            new Alert(Alert.AlertType.WARNING, "No hay servicios registrados.").show();
             return;
         }
         if (guardarTicketEnBD()) {
@@ -351,52 +372,24 @@ public class GenerarTicketView {
                 ticketPaper.getTransforms().remove(s);
                 ticketPaper.setEffect(new DropShadow(15, Color.color(0, 0, 0, 0.5)));
                 obtenerUltimoFolioYDatosCompletos();
-                new Alert(Alert.AlertType.INFORMATION, "Ticket guardado con éxito.").show();
+                new Alert(Alert.AlertType.INFORMATION, "Ticket generado correctamente.").show();
             }
-        } else {
-            new Alert(Alert.AlertType.ERROR, "Error: No se pudo guardar en la base de datos.").show();
         }
-    }
-
-    private void agregarFilaSesionDinamica(String desc, double costo, String fechaSesion) {
-        HBox fila = new HBox(10);
-        String descFinal = desc;
-        if (fechaSesion != null && !fechaSesion.isEmpty()) {
-            descFinal += " (" + fechaSesion + ")";
-        }
-
-        TextField tTipo = crearTextField("Servicio/Sesión");
-        tTipo.setText(descFinal);
-        tTipo.setEditable(false); 
-        HBox.setHgrow(tTipo, Priority.ALWAYS);
-
-        TextField tCosto = crearTextField("Costo");
-        tCosto.setText(String.valueOf(costo));
-        tCosto.setEditable(false); 
-        tCosto.setPrefWidth(100);
-
-        fila.getChildren().addAll(tTipo, tCosto);
-        contenedorSesionesFormulario.getChildren().add(fila);
-        actualizarTablaTicket();
     }
 
     private HBox crearFilaTicketUI(String nombre, int cant, double total) {
-        HBox row = new HBox(); row.setAlignment(Pos.TOP_LEFT); row.setSpacing(5); row.setPadding(new Insets(2, 0, 2, 0));
-        Label lN = new Label(nombre.toUpperCase()); lN.setPrefWidth(180); lN.setMaxWidth(180); lN.setWrapText(true);
-        lN.setFont(Font.font("Courier New", FontWeight.BOLD, 12)); lN.setStyle("-fx-text-fill: black;");
-        Label lC = new Label(String.valueOf(cant)); lC.setPrefWidth(40); lC.setAlignment(Pos.TOP_CENTER); 
-        lC.setFont(Font.font("Courier New", FontWeight.BOLD, 12)); lC.setStyle("-fx-text-fill: black;");
+        HBox row = new HBox(); row.setAlignment(Pos.TOP_LEFT); row.setPadding(new Insets(2, 0, 2, 0));
+        Label lN = new Label(nombre.toUpperCase()); lN.setPrefWidth(220); lN.setWrapText(true);
+        lN.setFont(Font.font("Courier New", FontWeight.BOLD, 11)); lN.setStyle("-fx-text-fill: black;");
         Label lP = new Label(String.format("$%.2f", total)); lP.setPrefWidth(100); lP.setAlignment(Pos.TOP_RIGHT); 
         lP.setFont(Font.font("Courier New", FontWeight.BOLD, 12)); lP.setStyle("-fx-text-fill: black;");
-        row.getChildren().addAll(lN, lC, lP);
+        row.getChildren().addAll(lN, lP);
         return row;
     }
 
     private VBox crearPanelTicket() {
-        VBox contenedor = new VBox();
-        contenedor.setAlignment(Pos.TOP_CENTER);
-        ticketPaper = new VBox(8);
-        ticketPaper.setPadding(new Insets(40, 40, 40, 40));
+        VBox contenedor = new VBox(); contenedor.setAlignment(Pos.TOP_CENTER);
+        ticketPaper = new VBox(8); ticketPaper.setPadding(new Insets(40, 40, 40, 40));
         ticketPaper.setStyle("-fx-background-color: white;");
         ticketPaper.setMaxWidth(420);
         ticketPaper.setEffect(new DropShadow(15, Color.color(0,0,0,0.5)));
@@ -424,8 +417,7 @@ public class GenerarTicketView {
 
     private Label separador() {
         return new Label("----------------------------------------") {{ 
-            setFont(Font.font("Courier New", FontWeight.BOLD, 12)); 
-            setStyle("-fx-text-fill: black;"); 
+            setFont(Font.font("Courier New", FontWeight.BOLD, 12)); setStyle("-fx-text-fill: black;"); 
         }};
     }
 
